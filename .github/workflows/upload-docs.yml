@@ -1,0 +1,45 @@
+name: Upload Documentation
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      domination_field:
+        description: 'Domination Field'
+        required: true
+        default: 'Rubin Observation'
+        type: choice
+        options:
+          - 'Rubin Observation'
+          - 'Science'
+          - 'Programming Languages'
+          - 'Data Mining'
+          - 'Email'
+          - 'Data Structures and Algorithms'
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Upload docs
+        run: |
+          FIELD="${{ github.event.inputs.domination_field }}"
+          node scripts/uploadDocs.js --dominationField "$FIELD"
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_BASE_URL: ${{ github.server_url }}/${{ github.repository }}
