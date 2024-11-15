@@ -246,3 +246,32 @@ ssh -L 3000:localhost:3000 -L 54321:localhost:54321 -L 11434:localhost:11434 use
    - Model loading fails: Check model installation status
    - Font loading warnings: Can be ignored if fonts load correctly
 
+# Git Branch Management
+
+## Creating a New Branch
+
+Follow these steps to create and push a new branch:
+
+1. Create and switch to a new branch:
+   ```bash
+   git checkout -b chat-init
+   ```
+
+2. Add all changes to staging:
+   ```bash
+   git add .
+   ```
+
+3. Commit your changes:
+   ```bash
+   git commit -m "Initial chat implementation"
+   ```
+
+4. Push the new branch to remote repository:
+   ```bash
+   git push origin chat-init
+   ```
+
+## Notes
+- Branch name: `chat-init`
+- Purpose: Initial chat feature implementation
