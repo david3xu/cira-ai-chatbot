@@ -1,91 +1,91 @@
-import { fetchChatHistory } from '@/actions/chat';
-import { answerQuestion } from '@/actions/ai';
 import { NextRequest, NextResponse } from 'next/server';
+import { answerQuestion } from '@/actions/ai';
+import { fetchChatHistory } from '@/actions/chat/fetchHistory';
+import { z } from 'zod';
+import { getFullModelName } from '@/lib/modelUtils';
+import { ChatMessage } from '@/lib/chat';
+import { storeChatMessage } from '@/actions/chat/storeMessage';
+import { supabase } from '@/lib/supabase';
+import { verifyMessageStorage } from '@/lib/dbVerification';
+
+const encoder = new TextEncoder();
+
+// Request validation schema
+const requestSchema = z.object({
+  message: z.string().min(1),
+  chatId: z.string().uuid(),
+  dominationField: z.string().min(1),
+  customPrompt: z.string().optional(),
+  imageFile: z.string().optional(),
+  model: z.string().min(1)
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const { 
-      message, 
-      chatId, 
-      dominationField, 
-      customPrompt, 
-      imageFile, 
-      documentData, 
-      model 
-    } = await req.json();
+    const body = await req.json();
+    const validatedData = requestSchema.parse(body);
     
-    if (!message || !chatId) {
-      return NextResponse.json(
-        { error: 'Message and chatId are required' },
-        { status: 400 }
+    // Only proceed if chat exists
+    const { data: chatExists } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('id', validatedData.chatId)
+      .single();
+
+    if (!chatExists) {
+      return new Response(
+        JSON.stringify({ error: 'Chat not found' }),
+        { status: 404 }
       );
     }
 
-    // Fetch and validate chat history
-    const history = await fetchChatHistory(chatId);
-    if (!Array.isArray(history)) {
-      return NextResponse.json(
-        { error: 'Invalid chat history' },
-        { status: 500 }
-      );
-    }
-
-    // Prepare message with document context
-    const messageWithDoc = {
-      role: 'user' as const,
-      content: message,
-      document: documentData
-    };
-    
-    // Set up streaming response
-    const encoder = new TextEncoder();
+    // Process message and return stream
     const stream = new ReadableStream({
       async start(controller) {
-        const sendToken = async (token: string) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ token })}\n\n`)
-          );
-        };
-
         try {
+          // Store user message in background
+          storeChatMessage(
+            validatedData.chatId,
+            'user',
+            validatedData.message,
+            validatedData.dominationField,
+            validatedData.imageFile
+          ).catch(console.error);
+
+          // Process AI response
           await answerQuestion({
-            message,
-            chatHistory: [...history, messageWithDoc],
-            dominationField,
-            chatId,
-            customPrompt,
-            imageBase64: imageFile,
-            model,
-            onToken: sendToken
+            message: validatedData.message,
+            chatHistory: await fetchChatHistory(validatedData.chatId),
+            dominationField: validatedData.dominationField,
+            chatId: validatedData.chatId,
+            customPrompt: validatedData.customPrompt,
+            imageBase64: validatedData.imageFile,
+            model: validatedData.model,
+            onToken: (token) => {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ token })}\n\n`)
+              );
+            }
           });
-        } catch (error) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ 
-                error: error instanceof Error ? error.message : 'Unknown error' 
-              })}\n\n`
-            )
-          );
-        } finally {
+
           controller.close();
+        } catch (error) {
+          console.error('Stream processing error:', error);
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ 
+              error: error instanceof Error ? error.message : 'Unknown error',
+              type: 'error'
+            })}\n\n`)
+          );
         }
-      },
+      }
     });
 
-    // Return streaming response
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
+    return new Response(stream);
   } catch (error) {
-    console.error('Error in route handler:', error);
-    return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      },
+    console.error('Chat API error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Failed to process chat request' }),
       { status: 500 }
     );
   }

@@ -1,4 +1,11 @@
-export function structureResponse(content: string): string {
+export function structureResponse(content: string | any): string {
+  // If content is not a string, try to extract text
+  if (typeof content !== 'string') {
+    if (content.text) return content.text;
+    if (content.content) return content.content;
+    return '';
+  }
+
   if (!content.trim()) return content;
 
   const paragraphs = content

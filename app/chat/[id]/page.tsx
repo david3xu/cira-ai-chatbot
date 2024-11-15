@@ -6,7 +6,6 @@ import { useChat } from '@/components/ChatContext';
 import SharedLayout from '@/components/SharedLayout';
 import { ChatArea } from '@/components/chatArea/ChatArea';
 import MessageInput from '@/components/message-input';
-import { Chat } from '@/lib/chat';
 import React from 'react';
 
 // Add Error Boundary Component
@@ -45,68 +44,65 @@ class ChatErrorBoundary extends React.Component<
   }
 }
 
-const ChatPage = () => {
+export default function ChatPage() {
   const params = useParams();
-  const id = params.id as string;
-  const { setCurrentChat, loadChatHistory, chats } = useChat();
+  const { loadChat, error } = useChat();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const loadChat = async () => {
-      if (id) {
-        setIsLoading(true);
-        try {
-          const cachedChat = localStorage.getItem(`chat_${id}`);
-          if (cachedChat) {
-            setCurrentChat(JSON.parse(cachedChat));
-          }
-          
-          const existingChat = chats.find(chat => chat.id === id);
-          if (existingChat && !existingChat.historyLoaded) {
-            await loadChatHistory(id);
-          } else if (!existingChat) {
-            const newChat: Chat = {
-              id,
-              messages: [],
-              historyLoaded: true,
-              name: 'New Chat',
-              dominationField: localStorage.getItem('dominationField') || 'Normal Chat',
-            };
-            setCurrentChat(newChat);
-            localStorage.setItem(`chat_${id}`, JSON.stringify(newChat));
-          }
-        } catch (error) {
-          console.error("Error loading chat:", error);
-          const cachedChat = localStorage.getItem(`chat_${id}`);
-          if (cachedChat) {
-            setCurrentChat(JSON.parse(cachedChat));
-          }
-        } finally {
+    let mounted = true;
+    
+    const initializeChat = async () => {
+      if (!params?.id || isLoading) return;
+      
+      setIsLoading(true);
+      try {
+        await loadChat(params.id as string);
+      } catch (err) {
+        console.error('Error loading chat:', err);
+      } finally {
+        if (mounted) {
           setIsLoading(false);
         }
       }
     };
 
-    loadChat();
-  }, [id, setCurrentChat, loadChatHistory, chats]);
+    initializeChat();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [params?.id, loadChat]);
 
   if (isLoading) {
-    return <SharedLayout><div>Loading...</div></SharedLayout>;
+    return (
+      <SharedLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-900"></div>
+        </div>
+      </SharedLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <SharedLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold mb-2">Error loading chat</h2>
+            <p className="text-gray-600">{error}</p>
+          </div>
+        </div>
+      </SharedLayout>
+    );
   }
 
   return (
-    <SharedLayout>
-      <ChatArea />
-      <MessageInput />
-    </SharedLayout>
-  );
-};
-
-// Wrap ChatPage with ErrorBoundary
-export default function ChatPageWrapper() {
-  return (
     <ChatErrorBoundary>
-      <ChatPage />
+      <SharedLayout>
+        <ChatArea />
+        <MessageInput />
+      </SharedLayout>
     </ChatErrorBoundary>
   );
 }

@@ -4,22 +4,12 @@ import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { FormattedMessage } from '@/types/messages';
 import { getCurrentModel } from '@/lib/modelUtils';
 import { MessageContent } from "openai/resources/beta/threads/messages.mjs";
+import { DocumentContent } from '@/types/messages';
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
-  content: string | MessageContent | MessageContent[] | {
-    text: string;
-    document?: {
-      text: string;
-      metadata: {
-        fileName: string;
-        fileType: string;
-        fileSize: number;
-        previewUrl?: string;
-      }
-    }
-  };
+  content: string | MessageContent | MessageContent[] | DocumentContent;
   dominationField: string;
   image?: string;
   chat_topic?: string;
@@ -78,22 +68,6 @@ interface UpdatedChat {
   customPrompt?: string;
 }
 
-export interface Message {
-  // ... message properties
-}
-
-export interface MessageData {
-  id: string;
-  chat_id: string;
-  domination_field: string;
-  image_url?: string;
-  user_content?: string;
-  user_role?: string;
-  assistant_content?: string;
-  assistant_role?: string;
-  chat_topic?: string;
-  model?: string;
-}
 
 interface ChatMessageWithDocument {
   content: string;

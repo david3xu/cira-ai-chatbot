@@ -1,1 +1,0 @@
-example-instantsearch-ecommerce - CodeSandbox

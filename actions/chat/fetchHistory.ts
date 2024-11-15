@@ -1,15 +1,31 @@
 import { supabase } from '@/lib/supabase';
-import { ChatMessage, MessageData } from '@/lib/chat';
+import { ChatMessage } from '@/lib/chat';
 import { v4 as uuidv4 } from 'uuid';
+import { validate as isUUID } from 'uuid';
+
+interface MessageData {
+  id: string;
+  user_id: string;
+  created_at: string;
+  domination_field: string;
+  chat_id: string;
+  message_pair_id: string;
+  user_content?: string;
+  assistant_content?: string;
+  user_role?: 'user' | 'system';
+  assistant_role?: 'assistant' | 'system';
+  chat_topic?: string;
+  image_url?: string;
+  model?: string;
+  metadata?: any;
+}
 
 export async function fetchChatHistory(chatId: string): Promise<ChatMessage[]> {
   try {
-    if (!chatId || chatId.trim() === '') {
-      console.warn('Empty chat ID provided');
+    if (!chatId || !isUUID(chatId)) {
+      console.warn('Invalid chat ID provided:', chatId);
       return [];
     }
-    
-    console.log('Fetching chat history for chatId:', chatId);
     
     const { data, error } = await supabase
       .from('chat_history')
@@ -17,54 +33,46 @@ export async function fetchChatHistory(chatId: string): Promise<ChatMessage[]> {
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('Supabase error details:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
-      throw error;
-    }
+    if (error) throw error;
 
-    if (!data) {
-      console.log('No data returned from Supabase');
+    if (!data || data.length === 0) {
+      console.log('No chat history found for chatId:', chatId);
       return [];
     }
 
-    const messages = data.map((item: MessageData) => {
-      let role: 'user' | 'assistant' | 'system';
-      if (item.user_role === 'user') {
-        role = 'user';
-      } else if (item.assistant_role === 'assistant') {
-        role = 'assistant';
-      } else {
-        role = 'system';
+    // Transform each record into a ChatMessage
+    const messages = data.map((record: MessageData) => {
+      // If record has user_content, it's a user message
+      if (record.user_content) {
+        return {
+          id: record.id,
+          role: 'user',
+          content: record.user_content,
+          dominationField: record.domination_field,
+          image: record.image_url,
+          chat_topic: record.chat_topic,
+          model: record.model
+        };
       }
+      // If record has assistant_content, it's an assistant message
+      if (record.assistant_content) {
+        return {
+          id: record.id,
+          role: 'assistant',
+          content: record.assistant_content,
+          dominationField: record.domination_field,
+          chat_topic: record.chat_topic,
+          model: record.model
+        };
+      }
+      // Skip any malformed records
+      return null;
+    })
+    .filter(Boolean) as ChatMessage[];
 
-      const content = role === 'user' 
-        ? item.user_content || ''
-        : role === 'assistant'
-          ? item.assistant_content || ''
-          : '';
-
-      return {
-        id: uuidv4(),
-        role,
-        content,
-        dominationField: item.domination_field,
-        image: item.image_url,
-        chat_topic: item.chat_topic
-      };
-    });
-
-    console.log('Processed messages:', messages);
     return messages;
-
   } catch (error) {
     console.error('Error in fetchChatHistory:', error);
-    if (error instanceof Error && error.message.includes('406')) {
-      console.error('406 Not Acceptable error - Check content negotiation headers');
-    }
     throw error;
   }
 }

@@ -16,7 +16,7 @@ const MessageInput: React.FC = () => {
     documentPreviewUrl,
     isLoading,
     fileInputRef,
-    handleSend,
+    handleSendMessage,
     handleInputChange,
     handleImageUpload,
     handleFileChange,
@@ -46,12 +46,25 @@ const MessageInput: React.FC = () => {
               value={message}
               onChange={handleInputChange}
               onPaste={handlePaste}
-              onSend={handleSend}
+              onSend={() => {
+                console.log('Send button clicked');
+                if (!message.trim()) {
+                  console.log('Message is empty, not sending');
+                  return;
+                }
+                handleSendMessage(message, selectedImage?.base64);
+              }}
               isLoading={isLoading}
               onKeyDown={(e) => {
+                console.log('Key pressed:', e.key);
                 if (e.key === 'Enter' && !e.shiftKey) {
+                  console.log('Enter pressed - attempting to send');
                   e.preventDefault();
-                  handleSend();
+                  if (!message.trim()) {
+                    console.log('Message is empty, not sending');
+                    return;
+                  }
+                  handleSendMessage(message, selectedImage?.base64);
                 }
               }}
             />

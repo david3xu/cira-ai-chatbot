@@ -22,6 +22,7 @@ interface AnswerQuestionParams {
   imageBase64?: string;
   model?: string;
   onToken?: (token: string) => void;
+  onError?: (error: string) => void;
 }
 
 interface FormattedMessage {
@@ -37,7 +38,8 @@ export async function answerQuestion({
   customPrompt,
   imageBase64,
   model,
-  onToken = () => {}
+  onToken = () => {},
+  onError = () => {}
 }: AnswerQuestionParams): Promise<AnswerQuestionResponse> {
   console.log('Starting answerQuestion with model:', model || DEFAULT_MODEL);
 
@@ -92,32 +94,63 @@ export async function answerQuestion({
     console.log('Generated prompt:', prompt);
 
     const apiMessages = processMessages(chatHistory, prompt, dominationField, imageBase64) as FormattedMessage[];
-    const fullResponse = await createCompletion(
+    let fullResponse = await createCompletion(
       apiMessages, 
       model || DEFAULT_MODEL, 
       onToken
     );
 
-    if (!fullResponse || typeof fullResponse.content !== 'string') {
-      throw new Error('Invalid response format from AI service');
+    if (!fullResponse || typeof fullResponse.content !== 'string' || !fullResponse.content.trim()) {
+      // Retry once with a simplified prompt
+      console.log('Empty response received, retrying with simplified prompt...');
+      const simplifiedPrompt = `Please answer this question clearly and directly: ${sanitizedQuery}`;
+      
+      const retryResponse = await createCompletion(
+        [{ role: 'user', content: simplifiedPrompt }],
+        model || DEFAULT_MODEL,
+        onToken
+      );
+
+      if (!retryResponse || typeof retryResponse.content !== 'string' || !retryResponse.content.trim()) {
+        throw new Error('Unable to generate a valid response after retry');
+      }
+
+      fullResponse = retryResponse;
     }
 
     const structuredResponse = structureResponse(fullResponse.content);
 
-    await storeChatMessage(
-      chatId, 
-      'assistant', 
-      structuredResponse, 
-      dominationField, 
-      undefined,
-      chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined,
-      true
-    );
+    console.log('Structured response:', structuredResponse);
 
-    return {
-      content: structuredResponse,
-      chat_topic: chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined
-    };
+    try {
+      const messageResult = await storeChatMessage(
+        chatId, 
+        'assistant', 
+        structuredResponse, 
+        dominationField, 
+        undefined,
+        chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined,
+        true
+      );
+
+      if (!messageResult) {
+        throw new Error('Failed to store assistant message');
+      }
+
+      console.log('Successfully stored message:', {
+        messageId: messageResult.id,
+        chatId,
+        role: 'assistant'
+      });
+
+      return {
+        content: structuredResponse,
+        chat_topic: chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined
+      };
+    } catch (error) {
+      console.error('Error storing assistant message:', error);
+      throw error;
+    }
   } catch (error) {
     console.error('Error in answerQuestion:', error);
     if (error instanceof OpenAI.APIError) {
@@ -127,6 +160,8 @@ export async function answerQuestion({
         throw new Error('Unable to connect to the AI server. Please check your connection and try again.');
       } else if (error.message.includes('Invalid response format')) {
         throw new Error('Received invalid response from AI service. Please try again.');
+      } else if (error.message.includes('Unable to generate')) {
+        throw new Error('Unable to generate a meaningful response. Please rephrase your question and try again.');
       }
     }
     throw new Error('An error occurred while processing your question. Please try again later.');

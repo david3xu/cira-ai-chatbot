@@ -7,12 +7,26 @@ import { useChat } from '@/hooks/useChat';
 import { ChatAreaProps } from './types';
 import { ModelSelector } from '@/components/chatArea/ModelSelector';
 import { ChatMessage } from '@/lib/chat';
+import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_MODEL } from '@/lib/modelUtils';
 
 export const ChatArea: React.FC<ChatAreaProps> = () => {
   const router = useRouter();
   const { chatId } = useParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { currentChat, streamingMessage, isLoading, isLoadingHistory, error, isInitializing } = useChat();
+  const { initializeChat, currentChat, streamingMessage, isLoading, isLoadingHistory, error, isInitializing, model } = useChat();
+  const [persistentMessages, setPersistentMessages] = useState<ChatMessage[]>([]);
+
+  // Add debug logging
+  useEffect(() => {
+    console.log('ChatArea state:', {
+      hasCurrentChat: !!currentChat,
+      messageCount: currentChat?.messages?.length,
+      messages: currentChat?.messages,
+      isLoading,
+      isLoadingHistory
+    });
+  }, [currentChat, isLoading, isLoadingHistory]);
 
   // Persist UI state
   const [showUploader, setShowUploader] = useState(() => {
@@ -41,6 +55,15 @@ export const ChatArea: React.FC<ChatAreaProps> = () => {
     }
   }, [currentChat, chatId, router]);
 
+  // Add state tracking for message storage
+  const [isMessageStored, setIsMessageStored] = useState(false);
+
+  useEffect(() => {
+    if (currentChat?.messages) {
+      setPersistentMessages(currentChat.messages);
+    }
+  }, [currentChat?.messages]);
+
   if (isInitializing) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -51,29 +74,6 @@ export const ChatArea: React.FC<ChatAreaProps> = () => {
       </div>
     );
   }
-
-  const renderMessages = () => {
-    if (isLoadingHistory) {
-      return <div className="text-white p-4">Loading chat history...</div>;
-    }
-
-    if (!currentChat?.messages?.length && !streamingMessage && !isLoading) {
-      return (
-        <div className="text-gray-400 text-center p-4">
-          Start a conversation by typing a message below.
-        </div>
-      );
-    }
-
-    return (
-      <ChatMessages 
-        messages={currentChat?.messages || []}
-        streamingMessage={streamingMessage}
-        isLoading={isLoading}
-        error={error}
-      />
-    );
-  };
 
   return (
     <div className="flex flex-col h-full">
@@ -109,23 +109,47 @@ export const ChatArea: React.FC<ChatAreaProps> = () => {
 
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-4">
-        {renderMessages()}
+        {currentChat ? (
+          <ChatMessages 
+            messages={persistentMessages}
+            streamingMessage={streamingMessage}
+            isLoading={isLoading}
+            error={error}
+          />
+        ) : (
+          <div className="text-gray-400 text-center p-4">
+            Welcome! Start a conversation by typing a message below.
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
     </div>
   );
 };
 
-// Message Bubble Component (can be moved to a separate file)
-export const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
+// Update the MessageBubble props interface
+interface MessageBubbleProps {
+  message: ChatMessage;
+  isStreaming?: boolean;
+}
+
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) => {
   const isUser = message.role === 'user';
   
   const renderContent = () => {
+    console.log('MessageBubble rendering content:', {
+      content: message.content,
+      type: typeof message.content,
+      isStreaming
+    });
+
     if (typeof message.content === 'string') {
       return message.content;
     }
     // Handle array of MessageContent or complex object by converting to string
-    return JSON.stringify(message.content);
+    const stringified = JSON.stringify(message.content);
+    console.log('Stringified content:', stringified);
+    return stringified;
   };
   
   return (

@@ -73,6 +73,10 @@ npx supabase start
 # Apply database migrations
 npx supabase db reset
 ```
+5. Update sql 
+```bash
+npx supabase db push
+```
 
 Note: The first time you run these commands, it may take a few minutes to download and start all Supabase services. Make sure Docker Desktop is running before executing these commands.
 

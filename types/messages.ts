@@ -5,6 +5,8 @@ export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'function';
   content: string | ChatCompletionContentPart[];
   dominationField?: string;
+  image?: string;
+  model?: string;
 }
 
 export interface FormattedMessage extends Omit<ChatCompletionMessageParam, 'content'> {
@@ -13,4 +15,24 @@ export interface FormattedMessage extends Omit<ChatCompletionMessageParam, 'cont
     text: string;
     title?: string;
   };
-} 
+}
+
+export type MessageContent = {
+  type: 'text' | 'image_url' | 'image_file';
+  text?: string;
+  image_url?: {
+    url: string;
+    detail?: string;
+  };
+  image_file?: {
+    file: string;
+    detail?: string;
+  };
+};
+
+export type DocumentContent = {
+  text: string;
+  document?: {
+    text: string;
+  };
+}; 

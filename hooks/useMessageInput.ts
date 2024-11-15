@@ -3,13 +3,14 @@ import { useChat } from '@/hooks/useChat';
 import { useRouter } from 'next/navigation';
 import { encodeImageToBase64, compressImage } from '@/lib/utils/file';
 import { FileProcessingService } from '@/lib/services/fileProcessingService';
-import { ChatModeHandler } from '@/lib/services/chatModeHandler';
-import { handleSendMessage } from '@/actions/chat';
-import { storeMessagePair } from '@/actions/chat/storeMessage';
 import { handleStreamResponse } from '@/lib/utils/streamHandler';
 import { v4 as uuidv4 } from 'uuid';
 import { ChatMessage } from '@/lib/chat';
 import { MessageContent, FormattedMessage } from '@/types/messages';
+import { sendMessageToDatabase } from '@/actions/chat/sendMessage';
+import { ChatCompletionContentPart } from 'openai/resources/chat/completions.mjs';
+import { verifyMessageStorage } from '@/lib/dbVerification';
+import { fetchChatHistory } from '@/actions/chat/fetchHistory';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -22,6 +23,9 @@ const validateImage = (file: File) => {
     throw new Error('Image file is too large (max 5MB).');
   }
 };
+
+// Add type for streaming message state
+type StreamingMessageState = string;
 
 export const useMessageInput = () => {
   const [message, setMessage] = useState("");
@@ -48,6 +52,9 @@ export const useMessageInput = () => {
     setStreamingMessage,
     setDominationField,
     model,
+    setCurrentChat,
+    isInitializing,
+    initializeChat,
   } = useChat();
 
   const router = useRouter();
@@ -78,72 +85,116 @@ export const useMessageInput = () => {
     };
   };
 
-  const handleSend = async () => {
-    const textContent = message?.trim();
-    if ((!textContent && !selectedImage && !selectedFile) || isLoading) return;
+  const handleSendMessage = async (message: string, imageFile?: string | null) => {
+    if (!message.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
-      setError(null);
-      setStreamingMessage('');
-
-      // Validate chat requirements
-      if (!currentChat && !createNewChat) {
-        throw new Error('Unable to create new chat');
+      // Initialize chat if none exists
+      if (!currentChat?.id) {
+        const newChat = await createNewChat({
+          chatId: uuidv4(),
+          model: model,
+          customPrompt: customPrompt,
+          dominationField: dominationField
+        });
+        
+        if (!newChat) {
+          throw new Error('Failed to create chat');
+        }
+        setCurrentChat(newChat);
       }
 
-      const fieldToUse = dominationField || 'Normal Chat';
-      if (!dominationField) setDominationField('Normal Chat');
+      // Create user message
+      const userMessage = {
+        id: uuidv4(),
+        role: 'user',
+        content: message,
+        dominationField: dominationField || 'Normal Chat'
+      };
 
-      let chatToUse = currentChat;
-      if (!chatToUse) {
-        chatToUse = createNewChat();
-        router.push(`/chat/${chatToUse.id}`);
-      }
-
-      // Immediately add user message to chat
-      const userMessage = createUserMessage(message, fieldToUse);
+      // Add user message to chat
       updateCurrentChat(prev => ({
         ...prev!,
-        messages: [...prev!.messages, userMessage]
+        messages: [...prev!.messages, userMessage as ChatMessage]
       }));
 
-      // Clear input state immediately after user message appears
-      clearInputState();
+      // Send message to API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message.trim(),
+          chatId: currentChat?.id,
+          imageFile: imageFile,
+          model: model,
+          dominationField: dominationField
+        })
+      });
 
-      // Process and send message
-      const processedContent = await processMessageContent();
-      const messageToSend = typeof processedContent.content === 'string' 
-        ? processedContent.content 
-        : JSON.stringify(processedContent.content);
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream available');
 
-      const response = await handleSendMessage(
-        messageToSend,
-        selectedImage ? new File([selectedImage.base64], selectedImage.name, { type: selectedImage.type }) : undefined,
-        fieldToUse,
-        customPrompt,
-        chatToUse.id,
-        currentChat?.messages || [],
-        !!currentChat?.historyLoaded,
-        model,
-        // Update streaming message in real-time
-        (token: string) => setStreamingMessage(prev => prev + token)
-      );
+      let fullResponse = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // After completion, add assistant message to chat
-      if (response) {
-        updateCurrentChat(prev => ({
-          ...prev!,
-          messages: [...prev!.messages, response.assistantMessage]
-        }));
+        const text = new TextDecoder().decode(value);
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.error) throw new Error(data.error);
+              if (data.token) {
+                fullResponse += data.token;
+                setStreamingMessage(prev => prev + data.token);
+              }
+            } catch (error) {
+              console.error('Error parsing streaming data:', error);
+            }
+          }
+        }
       }
+
+      // Add assistant message to UI
+      const assistantMessage: ChatMessage = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: fullResponse,
+        dominationField: dominationField,
+        model: model
+      };
+
+      updateCurrentChat(prev => ({
+        ...prev!,
+        messages: [...prev!.messages, assistantMessage]
+      }));
+
     } catch (error) {
-      console.error('Error in handleSend:', error);
-      setError(error instanceof Error ? error.message : 'Failed to send message. Please try again.');
+      console.error('Error in handleSendMessage:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setIsLoading(false);
-      setStreamingMessage('');
     }
+  };
+
+  const verifyWithRetry = async (chatId: string, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      const result = await verifyMessageStorage(chatId);
+      if (result && result.messageCount > 0) {
+        return result;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+    throw new Error('Failed to verify message storage after retries');
   };
 
   const processMessageContent = async (): Promise<FormattedMessage> => {
@@ -151,27 +202,24 @@ export const useMessageInput = () => {
       return {
         role: 'user',
         content: [
-          { 
-            type: 'text', 
-            text: message 
-          },
           {
-            type: 'image_url',
+            type: "text",
+            text: message
+          } as ChatCompletionContentPart,
+          {
+            type: "image_url",
             image_url: {
               url: selectedImage.base64,
-              detail: 'low'
+              detail: "low"
             }
-          }
+          } as ChatCompletionContentPart
         ]
       };
     }
     
     return {
       role: 'user',
-      content: {
-        type: 'text',
-        text: message
-      }
+      content: message // For text-only messages, use string directly
     };
   };
 
@@ -277,16 +325,14 @@ export const useMessageInput = () => {
 
   return {
     message,
-    setMessage,
     error,
     selectedImage,
     imagePreviewUrl,
     selectedFile,
     documentPreviewUrl,
-    fileContent,
     isLoading,
     fileInputRef,
-    handleSend,
+    handleSendMessage,
     handleInputChange,
     handleImageUpload,
     handleFileChange,

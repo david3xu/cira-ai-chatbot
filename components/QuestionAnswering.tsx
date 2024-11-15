@@ -7,7 +7,7 @@ import { encodeImageToBase64 } from '@/lib/utils/file'
 
 export default function QuestionAnswering() {
   const [query, setQuery] = useState('')
-  const [answer, setAnswer] = useState('')
+  const [answer, setAnswer] = useState<string | { text: string }>('')
   const [loading, setLoading] = useState(false)
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [dominationField, setDominationField] = useState('')
@@ -70,7 +70,10 @@ export default function QuestionAnswering() {
     } catch (error) {
       console.error('Error in handleSubmit:', error);
       if (error instanceof Error) {
-        setAnswer(`Error: ${error.message}`);
+        const errorMessage = error.message.includes('Unable to generate') 
+          ? 'I was unable to generate a meaningful response. Please try rephrasing your question.'
+          : `Error: ${error.message}`;
+        setAnswer(errorMessage);
       } else {
         setAnswer('An error occurred while processing your question. Please try again.');
       }
@@ -113,13 +116,17 @@ export default function QuestionAnswering() {
           {loading ? 'Loading...' : 'Submit'}
         </button>
       </form>
-      {answer && <div>{answer}</div>}
+      {answer && <div>{typeof answer === 'string' ? answer : answer.text || ''}</div>}
       <div>
         {chatHistory.map((message) => (
           <div key={message.id}>
-            <strong>{message.role}:</strong> {typeof message.content === 'string' 
-              ? message.content 
-              : JSON.stringify(message.content)}
+            <strong>{message.role}:</strong> {
+              typeof message.content === 'string' 
+                ? message.content 
+                : 'content' in message.content 
+                  ? String(message.content.content)
+                  : JSON.stringify(message.content)
+            }
           </div>
         ))}
       </div>

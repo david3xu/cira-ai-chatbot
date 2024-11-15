@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Chat, ChatMessage } from '@/lib/chat';
-import { fetchChatHistory, handleSendMessage as sendMessageToAPI, storeChatMessage } from '@/actions/chat';
+import { createNewChat as createNewChatInDB, fetchChatHistory, storeChatMessage, sendMessageToDatabase as sendMessageToAPI } from '@/actions/chat';
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation'; // Change this to use the new App Router
 import { DEFAULT_MODEL } from '@/lib/modelUtils';
@@ -75,19 +75,34 @@ export const useChatState = () => {
 
   const router = useRouter();
 
-  const createNewChat = useCallback(() => {
-    const newChat: Chat = {
-      id: uuidv4(),
-      name: `New Chat ${chats.length + 1}`,
-      dominationField: dominationField,
-      messages: [],
-      historyLoaded: true,
-      chat_topic: '' // Add this line, initialize as empty string
-    };
-    setChats(prevChats => [...prevChats, newChat]);
-    setCurrentChat(newChat);
-    return newChat;
-  }, [chats, dominationField]);
+  const createNewChat = useCallback(async () => {
+    try {
+      const newChat: Chat = {
+        id: uuidv4(),
+        name: `New Chat ${chats.length + 1}`,
+        dominationField: dominationField,
+        messages: [],
+        historyLoaded: true,
+        chat_topic: ''
+      };
+
+      // Use the renamed import
+      await createNewChatInDB({
+        chatId: newChat.id,
+        model: model,
+        customPrompt: customPrompt,
+        dominationField: dominationField
+      });
+
+      // Only update state after successful DB creation
+      setChats(prevChats => [...prevChats, newChat]);
+      setCurrentChat(newChat);
+      return newChat;
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+      throw new Error('Failed to create new chat');
+    }
+  }, [chats, dominationField, setChats, setCurrentChat]);
 
   const deleteChat = useCallback((chatId: string) => {
     setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
@@ -98,22 +113,17 @@ export const useChatState = () => {
 
   const addMessageToCurrentChat = useCallback((message: ChatMessage) => {
     setCurrentChat(prevChat => {
-      if (!prevChat) {
-        // If there's no current chat, create a new one
-        const newChat: Chat = {
-          id: uuidv4(),
-          name: 'New Chat',
-          dominationField: dominationField,
-          messages: [message],
-          historyLoaded: true,
-        };
-        setChats(prevChats => [...prevChats, newChat]);
-        return newChat;
-      }
+      if (!prevChat) return null;
+      
       const updatedMessages = [...prevChat.messages, message];
-      return { ...prevChat, messages: updatedMessages };
+      
+      return {
+        ...prevChat,
+        messages: updatedMessages,
+        chat_topic: message.chat_topic || prevChat.chat_topic
+      };
     });
-  }, [dominationField]);
+  }, []);
 
   const updateCurrentChat = useCallback((updater: (prevChat: Chat | null) => Chat | null) => {
     setCurrentChat(prevChat => {
@@ -135,14 +145,14 @@ export const useChatState = () => {
     if (currentChat) {
       setCurrentChat(prev => ({
         ...prev!,
-        messages: [...prev!.messages, message]
+        messages: [...(prev?.messages || []), message]
       }));
     }
   }, [currentChat]);
 
   const handleSendMessage = useCallback(async (message: string, imageFile?: File) => {
     if (!currentChat) {
-      const newChat = createNewChat();
+      const newChat = await createNewChat();
       router?.push(`/chat/${newChat.id}`);
       setCurrentChat(newChat);
     }
@@ -156,14 +166,10 @@ export const useChatState = () => {
     try {
       const response = await sendMessageToAPI(
         message,
-        imageFile,
-        dominationField,
-        savedCustomPrompt,
         chatId,
+        dominationField,
         currentChat?.messages || [],
-        !!currentChat?.historyLoaded,
-        model,
-        (token: string) => setStreamingMessage(prev => prev + token)
+        imageFile
       );
 
       if (response) {
@@ -171,7 +177,7 @@ export const useChatState = () => {
         addMessageToCurrentChat(userMessage);
         addMessageToCurrentChat(assistantMessage);
       } else {
-        throw new Error('No response received from handleSendMessage');
+        throw new Error('No response received from API');
       }
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
@@ -180,7 +186,7 @@ export const useChatState = () => {
       setIsLoading(false);
       setStreamingMessage('');
     }
-  }, [currentChat, dominationField, savedCustomPrompt, model, router, addMessageToCurrentChat]);
+  }, [currentChat, dominationField, model, router, addMessageToCurrentChat]);
 
   const loadChatHistory = useCallback(async (chatId: string) => {
     if (!chatId) {

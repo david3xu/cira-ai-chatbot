@@ -13,6 +13,9 @@ export interface ChatMessagesProps {
 
 export interface StreamingMessageProps {
   assistantContent: string;
+  userContent?: string;
+  isComplete: boolean;
+  error: string | null;
 }
 
 export interface CopyButtonProps {
@@ -32,4 +35,18 @@ export interface ModelOption {
   value: string;
   label: string;
   details?: Record<string, unknown>;
+}
+
+// interface ChatMessage {
+//   id: string;
+//   role: 'user' | 'assistant';
+//   content: string;
+//   dominationField: string;
+//   model: string;
+// }
+
+interface StreamingResponse {
+  token?: string;
+  error?: string;
+  type?: 'error';
 }

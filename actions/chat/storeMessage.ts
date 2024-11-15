@@ -67,95 +67,77 @@ class ImageMessageProcessor extends TextMessageProcessor {
 }
 
 export async function storeChatMessage(
-  chatId: string, 
-  role: 'user' | 'assistant', 
-  content: string | { text: string }, 
+  chatId: string,
+  role: 'user' | 'assistant',
+  content: string,
   dominationField: string,
   imageFile?: File | string,
   chat_topic?: string,
-  skipDuplicateCheck: boolean = false
+  model?: string
 ) {
-  const textContent = typeof content === 'string' ? content : content.text;
-
-  if (!chatId) {
-    throw new Error('chatId is required');
-  }
-
-  const messageProcessor = new TextMessageProcessor();
-  
   try {
-    const processedMessage = await messageProcessor.processMessage(textContent);
-    
-    let imageUrl;
-    if (imageFile) {
-      if (typeof imageFile === 'string' && imageFile.startsWith('http')) {
-        imageUrl = imageFile;
-      } else if (imageFile instanceof File) {
-        if (imageFile.size <= 5 * 1024 * 1024) {
-          try {
-            imageUrl = await uploadImage(imageFile);
-          } catch (error) {
-            console.warn('Failed to upload image, continuing without image:', error);
-          }
-        } else {
-          console.warn('Image file too large (>5MB), skipping storage');
+    const messageData = {
+      chat_id: chatId,
+      message_pair_id: uuidv4(),
+      domination_field: dominationField,
+      model: model,
+      chat_topic: chat_topic,
+      image_url: imageFile && typeof imageFile === 'string' ? imageFile : undefined,
+      created_at: new Date().toISOString()
+    };
+
+    const messageRecord = role === 'user' 
+      ? {
+          ...messageData,
+          user_content: content,
+          user_role: 'user',
+          assistant_content: null,
+          assistant_role: null
         }
-      }
+      : {
+          ...messageData,
+          assistant_content: content,
+          assistant_role: 'assistant',
+          user_content: null,
+          user_role: null
+        };
+
+    const { data, error } = await supabase
+      .from('chat_history')
+      .insert(messageRecord)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error storing message:', error);
+      throw error;
     }
 
-    const preview = truncateMessageContent(processedMessage.content, 8000);
-
-    if (role === 'user') {
-      const messageData = {
-        chat_id: chatId,
-        domination_field: dominationField,
-        message_pair_id: uuidv4(),
-        image_url: imageUrl,
-        user_content: preview,
-        user_role: role,
-        chat_topic: chat_topic,
-        metadata: processedMessage.metadata
-      };
-
-      const { data, error } = await supabase
-        .from('chat_history')
-        .insert(messageData)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (processedMessage.content.length > 8000) {
-        await MessageContentManager.storeContent(data.id, processedMessage.content, 'user');
-      }
-    } else {
-      const { data: latestMessage } = await supabase
-        .from('chat_history')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (latestMessage) {
-        const { error } = await supabase
-          .from('chat_history')
-          .update({
-            assistant_content: preview,
-            assistant_role: role
-          })
-          .eq('id', latestMessage.id);
-
-        if (error) throw error;
-
-        if (processedMessage.content.length > 8000) {
-          await MessageContentManager.storeContent(latestMessage.id, processedMessage.content, 'assistant');
-        }
-      }
-    }
+    return data;
   } catch (error) {
     console.error('Error in storeChatMessage:', error);
-    return null;
+    throw error;
+  }
+}
+
+// Helper function to process image files
+async function processImageFile(imageFile?: File | string): Promise<string | undefined> {
+  if (!imageFile) return undefined;
+
+  try {
+    if (typeof imageFile === 'string' && imageFile.startsWith('http')) {
+      return imageFile;
+    }
+    
+    if (imageFile instanceof File && imageFile.size <= 5 * 1024 * 1024) {
+      return await uploadImage(imageFile);
+    }
+    
+    console.warn('Image file too large or invalid format, skipping storage');
+    return undefined;
+  } catch (error) {
+    console.error('Error processing image:', error);
+    return undefined;
   }
 }
 
