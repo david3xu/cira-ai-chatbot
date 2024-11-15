@@ -23,6 +23,7 @@ interface AnswerQuestionParams {
   model?: string;
   onToken?: (token: string) => void;
   onError?: (error: string) => void;
+  skipMessageStorage?: boolean;
 }
 
 interface FormattedMessage {
@@ -39,7 +40,8 @@ export async function answerQuestion({
   imageBase64,
   model,
   onToken = () => {},
-  onError = () => {}
+  onError = () => {},
+  skipMessageStorage = false
 }: AnswerQuestionParams): Promise<AnswerQuestionResponse> {
   console.log('Starting answerQuestion with model:', model || DEFAULT_MODEL);
 
@@ -122,35 +124,25 @@ export async function answerQuestion({
 
     console.log('Structured response:', structuredResponse);
 
-    try {
+    if (!skipMessageStorage) {
       const messageResult = await storeChatMessage(
         chatId, 
         'assistant', 
         structuredResponse, 
         dominationField, 
         undefined,
-        chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined,
-        true
+        chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined
       );
 
       if (!messageResult) {
         throw new Error('Failed to store assistant message');
       }
-
-      console.log('Successfully stored message:', {
-        messageId: messageResult.id,
-        chatId,
-        role: 'assistant'
-      });
-
-      return {
-        content: structuredResponse,
-        chat_topic: chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined
-      };
-    } catch (error) {
-      console.error('Error storing assistant message:', error);
-      throw error;
     }
+
+    return {
+      content: structuredResponse,
+      chat_topic: chatHistory.length === 0 ? structuredResponse.split('.')[0] + '.' : undefined
+    };
   } catch (error) {
     console.error('Error in answerQuestion:', error);
     if (error instanceof OpenAI.APIError) {

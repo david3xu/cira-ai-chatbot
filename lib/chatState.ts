@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Chat, ChatMessage } from '@/lib/chat';
+import { Chat, ChatMessage, ChatMessageRole } from '@/lib/chat';
 import { createNewChat as createNewChatInDB, fetchChatHistory, storeChatMessage, sendMessageToDatabase as sendMessageToAPI } from '@/actions/chat';
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation'; // Change this to use the new App Router
@@ -79,14 +79,13 @@ export const useChatState = () => {
     try {
       const newChat: Chat = {
         id: uuidv4(),
-        name: `New Chat ${chats.length + 1}`,
+        name: 'New Chat',
         dominationField: dominationField,
         messages: [],
         historyLoaded: true,
         chat_topic: ''
       };
 
-      // Use the renamed import
       await createNewChatInDB({
         chatId: newChat.id,
         model: model,
@@ -94,7 +93,6 @@ export const useChatState = () => {
         dominationField: dominationField
       });
 
-      // Only update state after successful DB creation
       setChats(prevChats => [...prevChats, newChat]);
       setCurrentChat(newChat);
       return newChat;
@@ -102,7 +100,7 @@ export const useChatState = () => {
       console.error('Error creating new chat:', error);
       throw new Error('Failed to create new chat');
     }
-  }, [chats, dominationField, setChats, setCurrentChat]);
+  }, [chats, dominationField, model, customPrompt]);
 
   const deleteChat = useCallback((chatId: string) => {
     setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
@@ -174,8 +172,14 @@ export const useChatState = () => {
 
       if (response) {
         const { userMessage, assistantMessage } = response;
-        addMessageToCurrentChat(userMessage);
-        addMessageToCurrentChat(assistantMessage);
+        addMessageToCurrentChat({
+          ...userMessage,
+          role: userMessage.role as ChatMessageRole
+        });
+        addMessageToCurrentChat({
+          ...assistantMessage,
+          role: assistantMessage.role as ChatMessageRole
+        });
       } else {
         throw new Error('No response received from API');
       }

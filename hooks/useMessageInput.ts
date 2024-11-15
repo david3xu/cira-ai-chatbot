@@ -92,36 +92,39 @@ export const useMessageInput = () => {
     setError(null);
 
     try {
+      let chatToUse = currentChat;
+      
       // Initialize chat if none exists
       if (!currentChat?.id) {
+        const chatId = uuidv4();
+        console.log('Initializing new chat with ID:', chatId);
+        
         const newChat = await createNewChat({
-          chatId: uuidv4(),
+          chatId,
           model: model,
           customPrompt: customPrompt,
           dominationField: dominationField
         });
         
         if (!newChat) {
-          throw new Error('Failed to create chat');
+          throw new Error('Failed to create new chat');
         }
+        
+        chatToUse = newChat;
         setCurrentChat(newChat);
+        
+        // Wait for router update and state to settle
+        await router.push(`/chat/${chatId}`);
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Create user message
-      const userMessage = {
-        id: uuidv4(),
-        role: 'user',
-        content: message,
-        dominationField: dominationField || 'Normal Chat'
-      };
+      // Verify chat exists and has valid ID
+      if (!chatToUse?.id) {
+        console.error('Invalid chat state:', chatToUse);
+        throw new Error('Invalid chat state');
+      }
 
-      // Add user message to chat
-      updateCurrentChat(prev => ({
-        ...prev!,
-        messages: [...prev!.messages, userMessage as ChatMessage]
-      }));
-
-      // Send message to API
+      // Create and send message
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -129,12 +132,16 @@ export const useMessageInput = () => {
         },
         body: JSON.stringify({
           message: message.trim(),
-          chatId: currentChat?.id,
+          chatId: chatToUse.id,
           imageFile: imageFile,
           model: model,
           dominationField: dominationField
         })
       });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.statusText}`);
+      }
 
       // Handle streaming response
       const reader = response.body?.getReader();

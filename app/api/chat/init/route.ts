@@ -8,7 +8,7 @@ const defaultModel = process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'llama3.1';
 
 const initRequestSchema = z.object({
   chatId: z.string().uuid(),
-  customPrompt: z.string().optional(),
+  customPrompt: z.string().optional().default(''),
   model: z.string().optional().default(defaultModel),
   dominationField: z.string().optional().default('Normal Chat'),
 });
@@ -43,14 +43,21 @@ export async function POST(request: Request) {
     recentInits.set(sessionId, now);
     
     const body = await request.json();
+    console.log('Received init request:', body);
+    
     const validatedData = initRequestSchema.parse(body);
     
+    // Create new chat in database
     const newChat = await createNewChat({
       chatId: validatedData.chatId,
       customPrompt: validatedData.customPrompt,
       model: validatedData.model,
-      dominationField: validatedData.dominationField || 'Normal Chat'
+      dominationField: validatedData.dominationField
     });
+
+    if (!newChat) {
+      throw new Error('Failed to create chat in database');
+    }
 
     return NextResponse.json({ 
       success: true, 
@@ -61,13 +68,20 @@ export async function POST(request: Request) {
     
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid initialization data', details: error.errors },
+        { 
+          success: false, 
+          error: 'Invalid initialization data', 
+          details: error.errors 
+        },
         { status: 400 }
       );
     }
 
     return NextResponse.json(
-      { success: false, error: 'Failed to initialize chat' },
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to initialize chat'
+      },
       { status: 500 }
     );
   }

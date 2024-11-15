@@ -77,42 +77,27 @@ export async function storeChatMessage(
 ) {
   try {
     const messageData = {
+      id: uuidv4(),
       chat_id: chatId,
       message_pair_id: uuidv4(),
       domination_field: dominationField,
       model: model,
       chat_topic: chat_topic,
       image_url: imageFile && typeof imageFile === 'string' ? imageFile : undefined,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      user_content: role === 'user' ? content : null,
+      assistant_content: role === 'assistant' ? content : null,
+      user_role: role === 'user' ? 'user' : null,
+      assistant_role: role === 'assistant' ? 'assistant' : null
     };
-
-    const messageRecord = role === 'user' 
-      ? {
-          ...messageData,
-          user_content: content,
-          user_role: 'user',
-          assistant_content: null,
-          assistant_role: null
-        }
-      : {
-          ...messageData,
-          assistant_content: content,
-          assistant_role: 'assistant',
-          user_content: null,
-          user_role: null
-        };
 
     const { data, error } = await supabase
       .from('chat_history')
-      .insert(messageRecord)
+      .insert(messageData)
       .select()
       .single();
 
-    if (error) {
-      console.error('Error storing message:', error);
-      throw error;
-    }
-
+    if (error) throw error;
     return data;
   } catch (error) {
     console.error('Error in storeChatMessage:', error);
@@ -167,6 +152,8 @@ export async function storeMessagePair(
   assistantMessage: string,
   dominationField: string,
   imageUrl?: string,
+  chat_topic?: string,
+  model?: string,
   retries = 3
 ) {
   const messagePairId = uuidv4();
@@ -175,27 +162,27 @@ export async function storeMessagePair(
     try {
       const { data, error } = await supabase
         .from('chat_history')
-        .insert([
-          {
-            chat_id: chatId,
-            message_pair_id: messagePairId,
-            user_content: userMessage,
-            assistant_content: assistantMessage,
-            domination_field: dominationField,
-            image_url: imageUrl,
-            created_at: new Date().toISOString()
-          }
-        ])
+        .insert([{
+          id: uuidv4(),
+          chat_id: chatId,
+          message_pair_id: messagePairId,
+          user_content: userMessage,
+          assistant_content: assistantMessage,
+          domination_field: dominationField,
+          image_url: imageUrl,
+          chat_topic: chat_topic,
+          model: model,
+          user_role: 'user',
+          assistant_role: 'assistant',
+          created_at: new Date().toISOString()
+        }])
         .select()
         .single();
 
       if (error) throw error;
       return data;
     } catch (error) {
-      if (attempt === retries - 1) {
-        console.error('Failed to store message pair after retries:', error);
-        throw error;
-      }
+      if (attempt === retries - 1) throw error;
       await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
     }
   }

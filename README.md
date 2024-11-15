@@ -275,3 +275,77 @@ Follow these steps to create and push a new branch:
 ## Notes
 - Branch name: `chat-init`
 - Purpose: Initial chat feature implementation
+
+# Starting Docker on Linux
+
+## Initial Setup
+1. Install Docker if not already installed:
+```bash
+sudo apt update
+sudo apt install docker.io docker-compose
+```
+
+2. Add your user to the docker group (to run Docker without sudo):
+```bash
+sudo usermod -aG docker $USER
+newgrp docker   # Apply group changes without logging out
+```
+
+3. Configure Docker socket:
+```bash
+# Set the correct Docker socket path
+export DOCKER_HOST=unix:///var/run/docker.sock
+
+# Add to shell configuration (choose based on your shell)
+echo 'export DOCKER_HOST=unix:///var/run/docker.sock' >> ~/.bashrc
+# or
+echo 'export DOCKER_HOST=unix:///var/run/docker.sock' >> ~/.zshrc
+```
+
+## Daily Usage
+1. Start Docker service:
+```bash
+sudo systemctl start docker
+# or
+sudo service docker start
+```
+
+2. Check Docker status:
+```bash
+sudo systemctl status docker
+# or
+docker ps
+```
+
+3. Enable Docker to start on boot:
+```bash
+sudo systemctl enable docker
+```
+
+## Common Commands
+```bash
+# Restart Docker
+sudo systemctl restart docker
+
+# Stop Docker
+sudo systemctl stop docker
+
+# View Docker logs
+sudo journalctl -fu docker
+
+# Fix permissions if needed
+sudo chmod 666 /var/run/docker.sock
+```
+
+## Troubleshooting
+If you see errors about docker.sock:
+```bash
+# Check socket exists and permissions
+ls -l /var/run/docker.sock
+
+# Fix socket permissions
+sudo chmod 666 /var/run/docker.sock
+
+# Restart Docker service
+sudo systemctl restart docker
+```

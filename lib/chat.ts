@@ -6,15 +6,17 @@ import { getCurrentModel } from '@/lib/modelUtils';
 import { MessageContent } from "openai/resources/beta/threads/messages.mjs";
 import { DocumentContent } from '@/types/messages';
 
+export type ChatMessageRole = "user" | "assistant" | "system";
+
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string | MessageContent | MessageContent[] | DocumentContent;
+  role: ChatMessageRole;
+  content: string;
   dominationField: string;
+  created_at: string;
   image?: string;
   chat_topic?: string;
   model?: string;
-  document?: string;
 }
 
 export interface Chat {

@@ -101,12 +101,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     dominationField: string;
   }) => {
     if (!canInitialize()) {
-      console.warn('Please wait before creating another chat');
-      return null;
+      throw new Error('Please wait before creating another chat');
     }
     
     setIsInitializing(true);
+    
     try {
+      console.log('Creating new chat with options:', options);
+      
       const response = await fetch('/api/chat/init', {
         method: 'POST',
         headers: {
@@ -121,7 +123,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!response.ok) {
-        throw new Error('Failed to initialize chat');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to initialize chat');
       }
 
       const data = await response.json();
@@ -131,15 +134,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newChat = data.chat;
       setCurrentChat(newChat);
+      setMessages([]); // Reset messages for new chat
       return newChat;
     } catch (error) {
       console.error('Error creating chat:', error);
       setError(error instanceof Error ? error.message : 'Failed to create chat');
-      return null;
+      throw error; // Propagate error to caller
     } finally {
       setIsInitializing(false);
     }
-  }, [canInitialize, setError]);
+  }, [setError, setCurrentChat, setMessages]);
 
   const initializeChat = useCallback(async (customPrompt?: string) => {
     // Prevent multiple simultaneous initialization attempts

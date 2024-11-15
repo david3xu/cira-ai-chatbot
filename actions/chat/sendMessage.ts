@@ -5,6 +5,7 @@ import { answerQuestion } from '@/actions/ai';
 import { storeChatMessage } from './storeMessage';
 import { MessageContent, FormattedMessage } from '@/types/messages';
 import { generateChatTopic } from '@/lib/utils/chatTopicGenerator';
+import { supabase } from '@/lib/supabase';
 
 interface SendMessageResponse {
   userMessage: ChatMessage;
@@ -60,22 +61,11 @@ export async function sendMessageToDatabase(
   imageFile?: File | string
 ) {
   try {
-    // Create and store user message using helper function
-    const userMessage = createUserMessage(message, dominationField);
-    const userMessageResult = await storeChatMessage(
-      chatId,
-      'user',
-      userMessage.content as string,
-      dominationField,
-      imageFile
-    );
-
-    if (!userMessageResult) throw new Error('Failed to store user message');
-
-    // Get AI response
+    // Get AI response first
     const imageBase64 = imageFile && imageFile instanceof File 
       ? await encodeImageToBase64(imageFile) 
       : imageFile as string | undefined;
+    
     const aiResponse = await answerQuestion({
       message,
       chatHistory: currentMessages,
@@ -84,49 +74,53 @@ export async function sendMessageToDatabase(
       imageBase64,
     });
 
-    // Generate chat topic and create assistant message
+    // Generate chat topic
     const chatTopic = generateChatTopic(message, aiResponse.content);
-    const assistantMessage = createAssistantMessage(
-      aiResponse.content, 
-      dominationField,
-      chatTopic
-    );
 
-    // Store assistant message
-    const assistantMessageResult = await storeChatMessage(
-      chatId,
-      'assistant',
-      assistantMessage.content as string,
-      dominationField,
-      undefined,
-      chatTopic
-    );
+    // Store both messages in a single row
+    const messageData = {
+      id: uuidv4(),
+      chat_id: chatId,
+      message_pair_id: uuidv4(),
+      domination_field: dominationField,
+      image_url: imageFile && typeof imageFile === 'string' ? imageFile : undefined,
+      created_at: new Date().toISOString(),
+      user_content: message,
+      assistant_content: aiResponse.content,
+      user_role: 'user',
+      assistant_role: 'assistant',
+      chat_topic: chatTopic
+    };
 
-    if (!assistantMessageResult) throw new Error('Failed to store assistant message');
+    const { data, error } = await supabase
+      .from('chat_history')
+      .insert(messageData)
+      .select()
+      .single();
 
+    if (error) throw error;
+
+    // Return formatted messages for immediate display
     return {
-      userMessage: userMessageResult,
-      assistantMessage: assistantMessageResult
+      userMessage: {
+        id: data.id,
+        role: 'user',
+        content: message,
+        dominationField,
+        image: messageData.image_url,
+        created_at: messageData.created_at
+      },
+      assistantMessage: {
+        id: uuidv4(),
+        role: 'assistant',
+        content: aiResponse.content,
+        dominationField,
+        created_at: messageData.created_at
+      }
     };
   } catch (error) {
-    console.error('Error in handleSendMessage:', error);
+    console.error('Error in sendMessageToDatabase:', error);
     throw error;
   }
 }
-
-const createUserMessage = (message: string, dominationField: string, imageBase64?: string): ChatMessage => ({
-  id: uuidv4(),
-  role: 'user',
-  content: message,
-  dominationField,
-  image: imageBase64,
-});
-
-const createAssistantMessage = (content: string, dominationField: string, chat_topic: string): ChatMessage => ({
-  id: uuidv4(),
-  role: 'assistant',
-  content,
-  dominationField,
-  chat_topic,
-});
 

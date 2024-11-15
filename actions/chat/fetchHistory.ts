@@ -21,58 +21,82 @@ interface MessageData {
 }
 
 export async function fetchChatHistory(chatId: string): Promise<ChatMessage[]> {
+  console.log(`[fetchHistory] Starting fetch for chat: ${chatId}`);
+  
   try {
     if (!chatId || !isUUID(chatId)) {
-      console.warn('Invalid chat ID provided:', chatId);
+      console.warn('[fetchHistory] Invalid chat ID provided:', chatId);
       return [];
     }
     
+    // First verify chat exists
+    const { data: chatExists, error: chatError } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('id', chatId)
+      .single();
+
+    if (chatError) {
+      console.error('[fetchHistory] Error checking chat:', chatError);
+      return [];
+    }
+
+    if (!chatExists) {
+      console.warn('[fetchHistory] Chat not found:', chatId);
+      return [];
+    }
+
+    // Then fetch messages
     const { data, error } = await supabase
       .from('chat_history')
       .select('*')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[fetchHistory] Error fetching messages:', error);
+      throw error;
+    }
 
     if (!data || data.length === 0) {
-      console.log('No chat history found for chatId:', chatId);
+      console.log('[fetchHistory] No messages found for chat:', chatId);
       return [];
     }
 
-    // Transform each record into a ChatMessage
-    const messages = data.map((record: MessageData) => {
-      // If record has user_content, it's a user message
+    console.log(`[fetchHistory] Found ${data.length} messages for chat:`, chatId);
+    
+    const messages: ChatMessage[] = [];
+    data.forEach((record: MessageData) => {
       if (record.user_content) {
-        return {
+        messages.push({
           id: record.id,
           role: 'user',
           content: record.user_content,
           dominationField: record.domination_field,
           image: record.image_url,
           chat_topic: record.chat_topic,
-          model: record.model
-        };
+          model: record.model,
+          created_at: record.created_at
+        });
       }
-      // If record has assistant_content, it's an assistant message
+      
       if (record.assistant_content) {
-        return {
-          id: record.id,
+        messages.push({
+          id: uuidv4(),
           role: 'assistant',
           content: record.assistant_content,
           dominationField: record.domination_field,
           chat_topic: record.chat_topic,
-          model: record.model
-        };
+          model: record.model,
+          created_at: record.created_at
+        });
       }
-      // Skip any malformed records
-      return null;
-    })
-    .filter(Boolean) as ChatMessage[];
+    });
 
+    console.log(`[fetchHistory] Processed ${messages.length} messages for chat:`, chatId);
     return messages;
   } catch (error) {
-    console.error('Error in fetchChatHistory:', error);
+    console.error('[fetchHistory] Unexpected error:', error);
     throw error;
   }
 }

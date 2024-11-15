@@ -28,7 +28,7 @@ interface UseChatReturn {
     dominationField: string;
   }) => Promise<Chat>;
   updateCurrentChat: (chatOrUpdater: ((prevChat: Chat | null) => Chat | null)) => void;
-  handleSendMessage: (message: string, imageFile?: string | null) => Promise<void>;
+  handleSendMessage: (message: string, imageFile?: string | File | undefined) => Promise<void>;
   setCurrentChat: (chat: Chat | null) => void;
   initializeChat: (options: ChatInitOptions) => Promise<Chat | null>;
 }         
@@ -63,6 +63,22 @@ const retryOperation = async <T>(
   }
   throw lastError;
 };
+
+// First, define interfaces for the response types
+interface MessageResponse {
+  id: string;
+  content: string;
+  dominationField: string;
+  image?: string;
+  created_at: string;
+  chat_topic?: string;
+  model?: string;
+}
+
+interface SendMessageResponse {
+  userMessage: MessageResponse;
+  assistantMessage: MessageResponse;
+}
 
 export const useChat = (): UseChatReturn => {
   const {
@@ -173,7 +189,7 @@ export const useChat = (): UseChatReturn => {
     };
   }, [currentChat?.id]);
 
-  const handleSendMessage = useCallback(async (message: string, imageFile?: string | null) => {
+  const handleSendMessage = useCallback(async (message: string, imageFile?: string | File | undefined) => {
     if (!currentChat?.id || !message) {
       console.error('Missing required data:', { 
         chatId: currentChat?.id, 
@@ -187,114 +203,55 @@ export const useChat = (): UseChatReturn => {
     setError(null);
     setStreamingMessage('');
 
-    // Create and add user message to chat immediately
-    const userMessage = {
-      id: uuidv4(),
-      role: 'user',
-      content: message,
-      dominationField: dominationField || 'Normal Chat'
-    };
-
     try {
-      // First store the message in the database
-      const result = await sendMessageToDatabase(
+      const response = await sendMessageToDatabase(
         message,
         currentChat.id,
         dominationField || 'Normal Chat',
         currentChat.messages,
-        imageFile || undefined
-      );
+        imageFile
+      ) as SendMessageResponse;
 
-      if (!result) {
-        throw new Error('Failed to store message in database');
-      }
-
-      // Update local chat state with stored message
-      updateCurrentChat(prevChat => ({
-        ...prevChat!,
-        messages: [...prevChat!.messages, userMessage as ChatMessage]
-      }));
-
-      // Rest of streaming response handling...
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message,
-          chatId: currentChat.id,
-          dominationField: dominationField || 'Normal Chat',
-          model: model,
-          imageFile: imageFile || undefined,
-          customPrompt: customPrompt
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`HTTP error! status: ${response.status} ${JSON.stringify(errorData)}`);
-      }
-
-      // Handle streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body reader available');
-      }
-
-      let accumulatedMessage = '';
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        // Convert the Uint8Array to string
-        const chunk = new TextDecoder().decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.error) {
-                throw new Error(data.error);
-              }
-              
-              if (data.token) {
-                accumulatedMessage += data.token;
-                setStreamingMessage(accumulatedMessage);
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e);
-            }
-          }
-        }
-      }
-
-      // After streaming is complete, update the chat with the full assistant message
-      if (accumulatedMessage) {
-        const assistantMessage: ChatMessage = {
-          id: uuidv4(),
-          role: 'assistant',
-          content: accumulatedMessage,
-          dominationField: dominationField || 'Normal Chat',
-          model: model
+      if (response) {
+        // Create properly typed ChatMessage objects
+        const userMessage: ChatMessage = {
+          id: response.userMessage.id,
+          role: 'user' as const, // explicitly type as literal
+          content: response.userMessage.content,
+          dominationField: response.userMessage.dominationField,
+          image: response.userMessage.image,
+          chat_topic: response.userMessage.chat_topic,
+          model: response.userMessage.model,
+          created_at: response.userMessage.created_at
         };
 
-        updateCurrentChat(prevChat => ({
-          ...prevChat!,
-          messages: [...prevChat!.messages, assistantMessage]
-        }));
-      }
+        const assistantMessage: ChatMessage = {
+          id: response.assistantMessage.id,
+          role: 'assistant' as const, // explicitly type as literal
+          content: response.assistantMessage.content,
+          dominationField: response.assistantMessage.dominationField,
+          chat_topic: response.assistantMessage.chat_topic,
+          model: response.assistantMessage.model,
+          created_at: response.assistantMessage.created_at
+        };
 
+        // Update chat with properly typed messages
+        updateCurrentChat(prevChat => {
+          if (!prevChat) return null;
+          return {
+            ...prevChat,
+            messages: [...prevChat.messages, userMessage, assistantMessage]
+          };
+        });
+      }
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred while processing your message.');
+      setError('An error occurred while processing your message.');
     } finally {
       setIsLoading(false);
+      setStreamingMessage('');
     }
-  }, [currentChat, model, dominationField, customPrompt, setIsLoading, setError, setStreamingMessage]);
+  }, [currentChat, dominationField, updateCurrentChat]);
 
   const canInitialize = useCallback((): boolean => {
     const now = Date.now();
@@ -312,6 +269,7 @@ export const useChat = (): UseChatReturn => {
   const initializeChat = useCallback(async (options: ChatInitOptions = {}) => {
     const chatId = uuidv4();
     try {
+      // First create in database
       const newChat = await createNewChat({
         chatId,
         customPrompt: options.customPrompt,
@@ -319,13 +277,19 @@ export const useChat = (): UseChatReturn => {
         dominationField: options.dominationField || 'Normal Chat'
       });
       
+      // Then update local state
       setCurrentChat(newChat);
+      
+      // Wait for state update
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
       return newChat;
     } catch (error) {
       console.error('Error initializing chat:', error);
+      setError('Failed to initialize chat');
       throw error;
     }
-  }, [createNewChat, setCurrentChat]);
+  }, [createNewChat, setCurrentChat, setError]);
 
   return {
     currentChat,
