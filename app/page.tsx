@@ -1,16 +1,30 @@
-import Hero from "@/components/hero";
-import ConnectSupabaseSteps from "@/components/tutorial/connect-supabase-steps";
-import SignUpUserSteps from "@/components/tutorial/sign-up-user-steps";
-import { hasEnvVars } from "@/utils/supabase/check-env-vars";
+"use client";
 
-export default async function Index() {
+import SharedLayout from '@/components/chat/layout/SharedLayout';
+import { ChatArea } from '@/components/chat/area/ChatArea';
+import { Suspense } from 'react';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+
+const ChatErrorFallback = ({ error }: { error: Error }) => (
+  <div className="flex items-center justify-center h-full">
+    <div className="text-white">
+      Something went wrong. Please try again.
+    </div>
+  </div>
+);
+
+export default function Home() {
   return (
-    <>
-      <Hero />
-      <main className="flex-1 flex flex-col gap-6 px-4">
-        <h2 className="font-medium text-xl mb-4">Next steps</h2>
-        {hasEnvVars ? <SignUpUserSteps /> : <ConnectSupabaseSteps />}
-      </main>
-    </>
+    <div className="min-h-screen bg-gray-900">
+      <Suspense fallback={<div className="flex items-center justify-center h-screen">
+        <div className="text-white">Loading...</div>
+      </div>}>
+        <SharedLayout>
+          <ErrorBoundary FallbackComponent={ChatErrorFallback}>
+            <ChatArea />
+          </ErrorBoundary>
+        </SharedLayout>
+      </Suspense>
+    </div>
   );
 }
