@@ -1,170 +1,92 @@
 import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
+// import { useRouter, usePathname } from 'next/navigation';
 import { useChat } from './useChat';
 import { handleStreamingResponse } from '@/lib/utils/streaming';
 import { ChatMessage } from '@/lib/types/chat/chat';
 import { ChatService } from '@/lib/services/chat/ChatService';
 import ReactDOM from 'react-dom';
+import { useChatContext } from '../context/useChatContext';
+import { addMessageToChat, updateMessageInChat } from '../utils/chatState';
+import { handleError } from '@/lib/utils/error';
 
 export function useChatMessage() {
-  const router = useRouter();
+  const { dispatch } = useChatContext();
   const {
     currentChat,
-    createNewChat,
     sendMessage,
     updateCurrentChat,
     setStreamingMessage,
     model,
     dominationField,
-    setError,
-    error,
-    setCurrentChat
+    setError
   } = useChat();
   const [errorState, setErrorState] = useState<string | null>(null);
 
-  const handleMessage = useCallback(async (
-    content: string, 
-    chatData?: { 
-      chatId: string; 
-      model: string; 
-      dominationField: string; 
-    }
-  ) => {
-    console.log('handleMessage called with:', {
-      content,
-      chatData,
-      currentChatState: currentChat,
-      modelState: model,
-      dominationState: dominationField
-    });
-
-    // Use passed chat data or current state
-    const activeChatId = chatData?.chatId || currentChat?.id;
-    const activeModel = chatData?.model || model;
-    const activeDomination = chatData?.dominationField || dominationField;
-
-    if (!activeChatId || !activeModel || !activeDomination) {
-      throw new Error('Missing required fields: chatId, model, or dominationField');
-    }
-
+  const handleMessage = useCallback(async (content: string) => {
+    if (!content.trim()) return;
     const messagePairId = crypto.randomUUID();
-    
+
     try {
-      // Create message object
+      // Create message immediately
       const userMessage: ChatMessage = {
-        id: `${messagePairId}-user`,
-        chatId: activeChatId,
+        id: crypto.randomUUID(),
+        chatId: currentChat?.id || '',
         messagePairId,
-        userContent: content,
-        assistantContent: '',
+        userContent: content.trim(),
+        assistantContent: null,
         userRole: 'user',
         assistantRole: 'assistant',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        dominationField: activeDomination,
-        model: activeModel,
-        metadata: {},
-        status: 'sending'
+        status: 'sending',
+        dominationField: dominationField || 'Normal Chat',
+        model: model || 'llama3.1'
       };
 
-      console.log('Created user message:', userMessage);
+      // Save message immediately
+      await ChatService.saveMessage(userMessage);
 
-      // Update state atomically
-      await Promise.all([
-        ChatService.storeMessage(userMessage),
-        new Promise<void>(resolve => {
-          ReactDOM.unstable_batchedUpdates(() => {
-            updateCurrentChat(prev => {
-              if (!prev) return null;
-              const updated = {
-                ...prev,
-                messages: [...(prev.messages || []), userMessage]
-              };
-              
-              if (prev.id) {
-                localStorage.setItem(`chat_${prev.id}`, JSON.stringify(updated));
-                sessionStorage.setItem(`chat_${prev.id}`, JSON.stringify(updated));
-              }
-              
-              return updated;
-            });
-            resolve();
-          });
-        })
-      ]);
-
-      console.log('Current state before updates:', {
-        currentChat,
-        localStorage: localStorage.getItem(`chat_${activeChatId}`),
-        sessionStorage: sessionStorage.getItem(`chat_${activeChatId}`)
+      // Update UI immediately with batched updates
+      ReactDOM.unstable_batchedUpdates(() => {
+        dispatch({ type: 'ADD_MESSAGE', payload: userMessage });
+        updateCurrentChat(prev => prev && addMessageToChat(prev, userMessage));
       });
 
-      console.log('State after updates:', {
-        updatedChat: currentChat,
-        localStorage: localStorage.getItem(`chat_${activeChatId}`),
-        sessionStorage: sessionStorage.getItem(`chat_${activeChatId}`)
-      });
-
-      // Phase 2: Get and save assistant response
-      const response = await sendMessage(content, activeChatId);
+      // Process message and handle streaming response
+      const response = await sendMessage(content, currentChat?.id || '');
       let fullResponse = '';
-
-      console.log('Starting streaming response for messageId:', messagePairId);
 
       await handleStreamingResponse(response, {
         onToken: (token) => {
-          console.log('Received token:', { token, currentResponse: fullResponse });
           fullResponse += token;
-          setStreamingMessage(prev => {
-            const updated = prev + token;
-            sessionStorage.setItem(`streaming_${messagePairId}`, updated);
-            return updated;
-          });
+          setStreamingMessage(fullResponse);
         },
         onComplete: async () => {
-          console.log('Streaming complete:', {
-            fullResponse,
-            messageId: messagePairId,
-            chatState: currentChat
-          });
           setStreamingMessage('');
-          sessionStorage.removeItem(`streaming_${messagePairId}`);
           
-          // Update message in database
-          await ChatService.updateMessage(messagePairId, {
+          const completeMessage: ChatMessage = {
+            ...userMessage,
             assistantContent: fullResponse,
-            status: 'success'
-          });
+            status: 'success',
+            updatedAt: new Date().toISOString()
+          };
 
-          // Update UI state atomically
+          // Update UI and storage
           ReactDOM.unstable_batchedUpdates(() => {
             updateCurrentChat(prev => {
-              if (!prev?.messages) return prev;
-              const updatedMessages = prev.messages.map(msg => 
-                msg.messagePairId === messagePairId
-                  ? { ...msg, assistantContent: fullResponse, status: 'success' as const }
-                  : msg
-              );
-              
-              const updatedChat = {
-                ...prev,
-                messages: updatedMessages
-              };
-              
-              localStorage.setItem(`chat_${prev.id}`, JSON.stringify(updatedChat));
-              sessionStorage.setItem(`chat_${prev.id}`, JSON.stringify(updatedChat));
-              
-              return updatedChat;
+              if (!prev) return prev;
+              return updateMessageInChat(prev, messagePairId, completeMessage);
             });
           });
+
+          await ChatService.saveMessage(completeMessage);
         }
       });
-
     } catch (error) {
-      console.error('Message handling error:', error);
-      throw error;
+      console.error('Error in handleMessage:', error);
+      handleError(error, setError);
     }
-  }, [currentChat?.id, model, dominationField]);
+  }, [currentChat?.id, model, dominationField, sendMessage, updateCurrentChat, setStreamingMessage, dispatch, setError]);
 
   return { handleMessage, error: errorState, setError: setErrorState };
 } 

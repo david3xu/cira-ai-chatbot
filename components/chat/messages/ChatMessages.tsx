@@ -9,32 +9,22 @@ interface ChatMessagesProps {
   error?: string | null;
 }
 
-export function ChatMessages({ messages: propMessages, isLoading, error }: ChatMessagesProps) {
-  const { currentChat, streamingMessage } = useChat();
+export function ChatMessages({ messages, isLoading, error }: ChatMessagesProps) {
+  const { streamingMessage } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Combine prop messages with current chat messages
-  const messages = React.useMemo(() => {
-    const chatMessages = currentChat?.messages || [];
-    const allMessages = [...chatMessages];
-    
-    // Deduplicate based on messagePairId
-    const seen = new Set();
-    return allMessages.filter(msg => {
-      const duplicate = seen.has(msg.messagePairId);
-      seen.add(msg.messagePairId);
-      return !duplicate;
-    });
-  }, [currentChat?.messages, propMessages]);
-
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage]);
+  }, [messages?.length, streamingMessage]);
+
+  if (!messages?.length && !streamingMessage) {
+    return null;
+  }
 
   return (
     <div className="space-y-4">
-      {messages.map((message) => (
+      {messages?.map((message) => (
         <MessageBubble
           key={message.id}
           message={message}
@@ -46,7 +36,7 @@ export function ChatMessages({ messages: propMessages, isLoading, error }: ChatM
         <MessageBubble
           message={{
             id: 'streaming',
-            chatId: currentChat?.id || '',
+            chatId: messages?.[0]?.chatId || '',
             messagePairId: 'streaming',
             userContent: '',
             assistantContent: streamingMessage,
@@ -54,8 +44,8 @@ export function ChatMessages({ messages: propMessages, isLoading, error }: ChatM
             userRole: 'user',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            dominationField: currentChat?.dominationField || '',
-            model: currentChat?.model || '',
+            dominationField: messages?.[0]?.dominationField || '',
+            model: messages?.[0]?.model || '',
             isStreaming: true
           }}
           className="max-w-[80%]"

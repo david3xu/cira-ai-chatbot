@@ -57,7 +57,7 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        <MessageContent content={content} />
+        <MessageContent content={content || ''} />
 
         {message.createdAt && (
           <div className="mt-1 text-xs text-gray-400">

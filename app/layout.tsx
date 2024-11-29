@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChatProvider } from '@/components/providers/chat/ChatProvider';
+import { ChatProvider } from '@/components/chat/area/ChatProvider';
 import "./globals.css";
 
 export const metadata: Metadata = {

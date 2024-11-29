@@ -3,11 +3,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useChat } from '@/lib/features/chat/hooks/useChat';
-import { useChatContext } from '@/lib/features/chat/context/chatContext';
+import { useChatContext } from '@/lib/features/chat/context/useChatContext';
 import SharedLayout from '@/components/chat/layout/SharedLayout';
 import { ChatArea } from '@/components/chat/area/ChatArea';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { Chat } from '@/lib/types/chat/chat';
 import ReactDOM from 'react-dom';
 
 const ChatErrorFallback = ({ error }: { error: Error }) => (
@@ -38,29 +37,30 @@ export default function ChatPage() {
         setIsLoading(true);
         setError(null);
         
-        // Get both localStorage and sessionStorage states
-        const localChat = localStorage.getItem(`chat_${params.id}`);
-        const sessionChat = sessionStorage.getItem(`chat_${params.id}`);
-        const persistedChat = sessionChat || localChat;
+        // Get persisted chat state
+        const persistedChat = sessionStorage.getItem(`chat_${params.id}`);
         const chatState = persistedChat ? JSON.parse(persistedChat) : null;
         
-        // Load chat from API
-        const loadedChat = await loadChat(params.id as string);
-        
-        if (loadedChat) {
-          // Merge states, prioritizing persisted messages
-          const updatedChat = {
-            ...loadedChat,
-            messages: [...(chatState?.messages || []), ...(loadedChat.messages || [])]
-          };
-          
-          // Update both storages and state atomically
+        if (chatState) {
+          // Use persisted state immediately
           ReactDOM.unstable_batchedUpdates(() => {
-            updateCurrentChat(() => updatedChat);
-            localStorage.setItem(`chat_${params.id}`, JSON.stringify(updatedChat));
-            sessionStorage.setItem(`chat_${params.id}`, JSON.stringify(updatedChat));
+            updateCurrentChat(() => chatState);
+            loadedRef.current = true;
+            setIsLoading(false);
+          });
+          return;
+        }
+
+        // Load from API if no persisted state
+        const loadedChat = await loadChat(params.id as string);
+        if (loadedChat) {
+          ReactDOM.unstable_batchedUpdates(() => {
+            updateCurrentChat(() => loadedChat);
+            sessionStorage.setItem(`chat_${params.id}`, JSON.stringify(loadedChat));
             loadedRef.current = true;
           });
+        } else {
+          router.push('/');
         }
       } catch (err) {
         console.error('Error loading chat:', err);
@@ -72,46 +72,6 @@ export default function ChatPage() {
 
     initializeChat();
   }, [params?.id]);
-
-  useEffect(() => {
-    const syncState = async () => {
-      if (!params?.id) return;
-      
-      try {
-        // Load chat from API
-        const loadedChat = await loadChat(params.id as string);
-        
-        if (loadedChat) {
-          // Update localStorage with new chat
-          const existingChats = JSON.parse(localStorage.getItem('chats') || '[]');
-          const updatedChats = existingChats.map((chat: Chat) => 
-            chat.id === loadedChat.id ? loadedChat : chat
-          );
-          
-          if (!existingChats.find((chat: Chat) => chat.id === loadedChat.id)) {
-            updatedChats.push(loadedChat);
-          }
-          
-          localStorage.setItem('chats', JSON.stringify(updatedChats));
-          dispatch({ type: 'SET_CHATS', payload: updatedChats });
-        }
-      } catch (error) {
-        console.error('Error syncing state:', error);
-      }
-    };
-
-    syncState();
-  }, [params?.id, dispatch]);
-
-  if (isLoading) {
-    return (
-      <SharedLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-300"></div>
-        </div>
-      </SharedLayout>
-    );
-  }
 
   return (
     <ErrorBoundary FallbackComponent={ChatErrorFallback}>

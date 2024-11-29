@@ -41,90 +41,102 @@ $function$;
 
 -- Store message function
 CREATE OR REPLACE FUNCTION store_chat_message(
-  message_data JSONB,
-  operation TEXT DEFAULT 'insert'
+  message_data JSONB
 )
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_chat_id UUID := (message_data->>'chat_id')::UUID;
-  v_message_id UUID := COALESCE((message_data->>'id')::UUID, gen_random_uuid());
-  v_message_pair_id UUID := (message_data->>'message_pair_id')::UUID;
+  v_chat_id UUID;
+  v_message_id UUID;
+  v_message_pair_id UUID;
   result JSONB;
 BEGIN
-  -- Verify chat exists and is locked
+  -- Extract and validate UUIDs
+  BEGIN
+    v_chat_id := (message_data->>'chat_id')::UUID;
+    v_message_id := (message_data->>'id')::UUID;
+    v_message_pair_id := (message_data->>'message_pair_id')::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'Invalid UUID format - chat_id: %, message_id: %, message_pair_id: %',
+      message_data->>'chat_id',
+      message_data->>'id',
+      message_data->>'message_pair_id';
+  END;
+
+  -- Check for existing message with same pair ID
+  IF EXISTS (
+    SELECT 1 FROM chat_history 
+    WHERE message_pair_id = v_message_pair_id 
+    AND assistant_content IS NOT NULL
+  ) THEN
+    -- Message already exists and has assistant content, just return it
+    SELECT to_jsonb(chat_history.*) INTO result
+    FROM chat_history
+    WHERE message_pair_id = v_message_pair_id;
+    
+    RETURN jsonb_build_object(
+      'success', true,
+      'data', result
+    );
+  END IF;
+
+  -- Verify chat exists
   IF NOT EXISTS (
     SELECT 1 FROM chats 
-    WHERE id = v_chat_id 
-    FOR UPDATE
+    WHERE id = v_chat_id
   ) THEN
-    RAISE EXCEPTION 'Chat not found or not locked';
+    RAISE EXCEPTION 'Chat with ID % not found', v_chat_id;
   END IF;
 
-  IF operation = 'insert' THEN
-    INSERT INTO chat_history (
-      id,
-      chat_id,
-      message_pair_id,
-      user_content,
-      assistant_content,
-      user_role,
-      assistant_role,
-      domination_field,
-      model,
-      custom_prompt,
-      metadata,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      v_message_id,
-      v_chat_id,
-      v_message_pair_id,
-      message_data->>'user_content',
-      '',
-      COALESCE(message_data->>'user_role', 'user'),
-      COALESCE(message_data->>'assistant_role', 'assistant'),
-      message_data->>'domination_field',
-      message_data->>'model',
-      message_data->>'custom_prompt',
-      CASE 
-        WHEN message_data->>'files' IS NOT NULL 
-        THEN jsonb_build_object('files', message_data->'files')
-        ELSE NULL 
-      END,
-      NOW(),
-      NOW()
-    )
-    RETURNING to_jsonb(chat_history.*) INTO result;
-
-    -- Update chat's last activity
-    UPDATE chats 
-    SET updated_at = NOW()
-    WHERE id = v_chat_id;
-
-  ELSIF operation = 'update' THEN
-    UPDATE chat_history
-    SET 
-      assistant_content = message_data->>'assistant_content',
-      updated_at = NOW()
-    WHERE 
-      chat_id = v_chat_id
-      AND message_pair_id = v_message_pair_id
-    RETURNING to_jsonb(chat_history.*) INTO result;
-  END IF;
+  -- Upsert the message
+  INSERT INTO chat_history (
+    id,
+    chat_id,
+    message_pair_id,
+    user_content,
+    assistant_content,
+    user_role,
+    assistant_role,
+    domination_field,
+    model,
+    custom_prompt,
+    metadata,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    v_message_id,
+    v_chat_id,
+    v_message_pair_id,
+    message_data->>'user_content',
+    NULLIF(message_data->>'assistant_content', ''),
+    COALESCE(message_data->>'user_role', 'user'),
+    COALESCE(message_data->>'assistant_role', 'assistant'),
+    message_data->>'domination_field',
+    message_data->>'model',
+    message_data->>'custom_prompt',
+    message_data->'metadata',
+    COALESCE((message_data->>'created_at')::TIMESTAMPTZ, NOW()),
+    NOW()
+  )
+  ON CONFLICT (message_pair_id) 
+  DO UPDATE SET
+    assistant_content = EXCLUDED.assistant_content,
+    updated_at = NOW()
+  RETURNING to_jsonb(chat_history.*) INTO result;
 
   RETURN jsonb_build_object(
     'success', true,
     'data', result
   );
-EXCEPTION
-  WHEN OTHERS THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', SQLERRM
-    );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'error', SQLERRM,
+    'detail', SQLSTATE
+  );
 END;
 $function$;
 

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     domination_field TEXT NOT NULL,
-    message_pair_id UUID NOT NULL,
+    message_pair_id UUID NOT NULL UNIQUE,
     user_content TEXT,
     assistant_content TEXT,
     user_role TEXT CHECK (user_role IN ('user', 'system')),

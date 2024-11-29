@@ -9,6 +9,13 @@ export const ChatHistoryDisplay: React.FC<ChatHistoryDisplayProps> = ({
   isLoading,
   error
 }) => {
+  console.log('ChatHistoryDisplay render:', {
+    messageCount: messages.length,
+    hasStreamingMessage: !!streamingMessage,
+    isLoading,
+    error
+  });
+
   return (
     <div className="flex flex-col gap-4">
       {messages.map(message => (
@@ -27,12 +34,15 @@ export const ChatHistoryDisplay: React.FC<ChatHistoryDisplayProps> = ({
         <MessageBubble
           message={{
             id: 'streaming',
-            message_pair_id: `streaming-${Date.now()}`,
-            role: 'assistant',
-            content: streamingMessage,
-            chat_id: messages[messages.length - 1]?.chat_id || 'temp',
-            created_at: new Date().toISOString(),
-            domination_field: messages[messages.length - 1]?.domination_field || 'Normal Chat',
+            messagePairId: `streaming-${Date.now()}`,
+            userRole: 'user',
+            assistantRole: 'assistant',
+            userContent: streamingMessage,
+            assistantContent: null,
+            chatId: messages[messages.length - 1]?.chatId || 'temp',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            dominationField: messages[messages.length - 1]?.dominationField || 'Normal Chat',
             model: messages[messages.length - 1]?.model || '',
             temporary: true,
             isStreaming: true

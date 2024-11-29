@@ -12,7 +12,8 @@ const newChatSchema = z.object({
   name: z.string().optional(),
   customPrompt: z.string().nullable().optional(),
   metadata: z.record(z.any()).optional(),
-  chatId: z.string().uuid('Invalid chat ID format').optional()
+  chatId: z.string().uuid('Invalid chat ID format').optional(),
+  source: z.enum(['input', 'sidebar']).optional()
 });
 
 export async function POST(req: NextRequest) {

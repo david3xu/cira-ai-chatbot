@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/chat/area/Sidebar';
-import { useChatContext } from '@/lib/features/chat/context/chatContext';
+import { useChatContext } from '@/lib/features/chat/context/useChatContext';
 
 interface SharedLayoutProps {
   children: React.ReactNode;

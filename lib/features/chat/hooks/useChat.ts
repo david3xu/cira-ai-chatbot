@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chat, ChatMessage, CreateNewChatParams } from '@/lib/types/chat/chat';
-import { useChatContext } from '../context/chatContext';
+import { useChatContext } from '../context/useChatContext';
 import { ChatService } from '@/lib/services/chat/ChatService';
 import { handleError } from '@/lib/utils/error';
+import ReactDOM from 'react-dom';
 
 export function useChat() {
   const { state, dispatch, handleChatCreation } = useChatContext();
@@ -24,28 +25,24 @@ export function useChat() {
     }
   }, [state.currentChat?.id]);
 
+  useEffect(() => {
+    console.log('useChat state update:', {
+      currentChat,
+      streamingMessage,
+      isLoading,
+      error
+    });
+  }, [currentChat, streamingMessage, isLoading, error]);
+
   const updateCurrentChat = useCallback((updater: (prev: Chat | null) => Chat | null) => {
-    if (isUpdatingRef.current) return;
+    console.log('Updating chat:', {
+      previous: currentChat,
+      isUpdating: isUpdatingRef.current
+    });
     
-    isUpdatingRef.current = true;
     setCurrentChat(prev => {
       const updated = updater(prev);
-      if (!updated) return prev;
-
-      // Schedule context update for next tick
-      Promise.resolve().then(() => {
-        dispatch({
-          type: 'UPDATE_CHAT_STATE',
-          payload: {
-            currentChat: updated,
-            chats: state.chats.map(chat => 
-              chat.id === updated.id ? updated : chat
-            )
-          }
-        });
-        isUpdatingRef.current = false;
-      });
-
+      console.log('Chat update result:', updated);
       return updated;
     });
   }, [dispatch, state.chats]);
@@ -73,48 +70,77 @@ export function useChat() {
 
   const createNewChat = useCallback(async (params: CreateNewChatParams): Promise<Chat | null> => {
     try {
-      const payload = {
-        model: params.model,
-        domination_field: params.dominationField,
-        name: params.name || null,
-        user_id: '00000000-0000-0000-0000-000000000000',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        custom_prompt: null,
+      // Ensure required fields with defaults
+      const chatData: CreateNewChatParams = {
+        model: params.model || model || 'llama3.1',
+        dominationField: params.dominationField || dominationField || 'Normal Chat',
+        source: params.source,
+        name: params.source === 'input' ? 
+          (params.name || params.metadata?.initialMessage?.substring(0, 30)) : 
+          'New Chat',
         metadata: params.metadata || null,
-        messages: []
+        customPrompt: params.customPrompt || null
       };
 
-      console.log('Sending create chat payload:', payload);
-
-      const response = await fetch('/api/chat/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const responseData = await response.json();
-      console.log('Full response:', responseData);
-      console.log('Create chat response:', {
-        responseData,
-        chat: responseData.data.chat,
-        success: responseData.success
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to create chat: ${responseData.error || 'Unknown error'}`);
+      const chat = await ChatService.createChat(chatData);
+      
+      if (!chat) {
+        throw new Error('Failed to create chat');
       }
 
-      if (!responseData.data?.chat) {
-        throw new Error('Chat data missing from response');
+      // Create initial message if from input
+      let initialMessage: ChatMessage | null = null;
+      if (params.source === 'input' && params.metadata?.initialMessage) {
+        initialMessage = {
+          id: crypto.randomUUID(),
+          chatId: chat.id,
+          messagePairId: crypto.randomUUID(),
+          userContent: params.metadata.initialMessage,
+          assistantContent: null,
+          userRole: 'user',
+          assistantRole: 'assistant',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: 'sending',
+          dominationField: chat.dominationField,
+          model: chat.model
+        };
       }
 
-      return responseData.data.chat;
+      // Prepare chat with initial message
+      const chatWithMessage = initialMessage ? {
+        ...chat,
+        messages: [initialMessage]
+      } : chat;
+
+      // Batch UI updates
+      ReactDOM.unstable_batchedUpdates(() => {
+        setCurrentChat(chatWithMessage);
+        dispatch({
+          type: 'UPDATE_CHAT_STATE',
+          payload: {
+            currentChat: chatWithMessage,
+            chats: [...state.chats, chat]
+          }
+        });
+
+        // Store in storage with messages
+        localStorage.setItem(`chat_${chat.id}`, JSON.stringify(chatWithMessage));
+        sessionStorage.setItem(`chat_${chat.id}`, JSON.stringify(chatWithMessage));
+        sessionStorage.setItem('currentChat', JSON.stringify(chatWithMessage));
+      });
+
+      // Save initial message if exists
+      if (initialMessage) {
+        await ChatService.saveMessage(initialMessage);
+      }
+
+      return chatWithMessage;
     } catch (error) {
-      console.error('Create chat error:', error instanceof Error ? error.message : error);
-      return null;
+      console.error('Create chat error:', error);
+      throw error;
     }
-  }, []);
+  }, [dispatch, state.chats, model, dominationField]);
 
   const loadChat = useCallback(async (chatId: string): Promise<Chat | null> => {
     try {
@@ -192,6 +218,31 @@ export function useChat() {
     }
   }, [dispatch, state.chats, state.currentChat]);
 
+  const updateModel = useCallback(async (newModel: string) => {
+    try {
+      setModel(newModel); // Keep this for global model state
+      
+      if (currentChat?.id) {
+        // Use updateCurrentChat to maintain consistency with other state updates
+        updateCurrentChat(prev => prev ? {
+          ...prev,
+          model: newModel,
+          updatedAt: new Date().toISOString()
+        } : null);
+        
+        // Update in localStorage
+        const chatData = localStorage.getItem(`chat_${currentChat.id}`);
+        if (chatData) {
+          const updatedChat = { ...JSON.parse(chatData), model: newModel };
+          localStorage.setItem(`chat_${currentChat.id}`, JSON.stringify(updatedChat));
+        }
+      }
+    } catch (error) {
+      handleError(error, setError);
+      throw error;
+    }
+  }, [currentChat?.id, updateCurrentChat]);
+
   return {
     currentChat,
     setCurrentChat,
@@ -213,6 +264,7 @@ export function useChat() {
     loadChat,
     sendMessage,
     addMessage,
-    chats: state.chats
+    chats: state.chats,
+    updateModel
   };
 } 

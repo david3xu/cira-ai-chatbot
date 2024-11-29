@@ -1,7 +1,7 @@
 import { ChatMessage } from '@/lib/types/chat/chat';
 import { ChatService } from '@/lib/services/chat/ChatService';
 
-export async function storeMessage(message: ChatMessage) {
+export async function saveMessage(message: ChatMessage) {
   try {
     console.log('Storing message:', {
       chatId: message.chatId,
@@ -9,9 +9,9 @@ export async function storeMessage(message: ChatMessage) {
       contentLength: message.userContent.length
     });
 
-    return await ChatService.storeMessage(message);
+    return await ChatService.saveMessage(message);
   } catch (error) {
-    console.error('Error in storeMessage action:', error);
+    console.error('Error in saveMessage action:', error);
     throw error;
   }
 } 

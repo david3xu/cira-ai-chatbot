@@ -35,9 +35,9 @@ export function ModelSelector() {
   const refreshModels = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('Fetching models...');
+      // console.log('Fetching models...');
       const models = await getAvailableModels();
-      console.log('Available models:', models);
+      // console.log('Available models:', models);
       setModels(models);
       
       if (!model) {
@@ -68,11 +68,7 @@ export function ModelSelector() {
       
       const normalizedModel = normalizeModelName(value);
       
-      setModel(normalizedModel);
-      
-      if (currentChat?.id) {
-        await updateModel(normalizedModel);
-      }
+      await updateModel(normalizedModel);
     } catch (error) {
       setError('Failed to update model');
       console.error('Error updating model:', error);

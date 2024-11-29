@@ -21,7 +21,7 @@ export interface ChatMessageDB extends ChunkedMessage {
   chatId: string;
   messagePairId: string;
   userContent: string;
-  assistantContent: string;
+  assistantContent: string | null;
   userRole: 'user' | 'system';
   assistantRole: 'assistant' | 'system';
   createdAt: string;
@@ -58,8 +58,10 @@ export interface CreateNewChatParams {
   model: string;
   dominationField: string;
   source: 'sidebar' | 'input';
+  customPrompt?: string | null;
   name: string | null;
   metadata: Record<string, any> | null;
+  chatId?: string;
 }
 
 export interface ChatState {

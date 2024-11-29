@@ -18,11 +18,11 @@ export const transformOllamaModel = (model: OllamaModel): ModelOption => {
 
 export const getAvailableModels = async (): Promise<ModelOption[]> => {
   try {
-    console.log('Fetching models from Ollama service...');
+    // console.log('Fetching models from Ollama service...');
     const models = await OllamaService.getModels();
-    console.log('Raw models from Ollama:', models);
+    // console.log('Raw models from Ollama:', models);
     const transformed = models.map(transformOllamaModel);
-    console.log('Transformed models:', transformed);
+    // console.log('Transformed models:', transformed);
     return transformed;
   } catch (error) {
     console.error('Error fetching models:', error);

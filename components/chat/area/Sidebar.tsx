@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, forwardRef } from 'react';
+import { useState, useEffect, useCallback, forwardRef, useMemo } from 'react';
 import { useChatSidebar } from '@/lib/features/chat/hooks/useChatSidebar';
-import { useChatContext } from '@/lib/features/chat/context/chatContext';
-import { Chat, CreateNewChatParams } from '@/lib/types/chat/chat';
-import { Button } from '@/components/ui/button';
+import { useChatContext } from '@/lib/features/chat/context/useChatContext';
+import { Chat } from '@/lib/types/chat/chat';
+import { Button, ButtonProps } from '@/components/ui/button';
 import { Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
-// import { v4 as uuidv4 } from 'uuid';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,12 +25,38 @@ import {
 } from '@/components/ui/select';
 import { dominationFieldsData } from '@/lib/data/domFields';
 import { CustomPromptArea } from './CustomPromptArea';
-// import { CreateNewChatParams } from '@/lib/types/chat/chat';
-import { ButtonProps } from '@/components/ui/button';
+import { storageActions } from '@/lib/features/chat/actions/storage';
 
 interface SidebarProps {
   onSidebarToggle: (visible: boolean) => void;
 }
+
+interface DeleteChatButtonProps {
+  chat: Chat;
+  onDelete: (chatId: string, e: React.MouseEvent) => void;
+}
+
+const DeleteChatButton = ({ chat, onDelete }: DeleteChatButtonProps) => (
+  <AlertDialog>
+    <AlertDialogTrigger asChild>
+      <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded">
+        <Trash2 className="h-4 w-4 text-gray-400" />
+      </button>
+    </AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete Chat</AlertDialogTitle>
+        <AlertDialogDescription>
+          Are you sure you want to delete this chat? This action cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction onClick={(e) => onDelete(chat.id, e)}>Delete</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+);
 
 // Add forwardRef to prevent ref issues
 const SidebarButton = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -41,75 +67,143 @@ const SidebarButton = forwardRef<HTMLButtonElement, ButtonProps>(
 SidebarButton.displayName = 'SidebarButton';
 
 export function Sidebar({ onSidebarToggle }: SidebarProps) {
-  // Context hooks first
+  const pathname = usePathname();
+  const router = useRouter();
   const { state, dispatch } = useChatContext();
   const {
     currentChat,
     setCurrentChat,
     createNewChat,
-    deleteChat,
     dominationField,
     setDominationField,
     model,
+    chats,
     loadChat,
-    chats
+    isLoading,
+    error,
+    fetchChats
   } = useChatSidebar();
 
-  // All useState hooks together
   const [sidebarVisible, setSidebarVisible] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebarVisible') !== 'false';
     }
     return true;
   });
-  const [isLoading, setIsLoading] = useState(false);
 
-  // useEffect hooks
   useEffect(() => {
     localStorage.setItem('sidebarVisible', String(sidebarVisible));
     onSidebarToggle(sidebarVisible);
   }, [sidebarVisible, onSidebarToggle]);
 
-  // All useCallback hooks together
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedVisibility = localStorage.getItem('sidebarVisible') !== 'false';
+      setSidebarVisible(savedVisibility);
+    }
+  }, []);
+
   const handleNewChat = useCallback(async () => {
-    if (!createNewChat) return;
-    
     try {
-      const params: CreateNewChatParams = {
+      const newChat = await createNewChat({
         model: model || 'llama3.1',
         dominationField: dominationField || 'Normal Chat',
-        source: 'sidebar' as const,
-        name: null,
-        metadata: null
-      };
-      const newChat = await createNewChat(params);
-      if (newChat && setCurrentChat) {
-        localStorage.setItem(`chat_${newChat.id}`, JSON.stringify(newChat));
-        
-        const existingChats = JSON.parse(localStorage.getItem('chats') || '[]');
-        const updatedChats = [...existingChats, newChat];
-        localStorage.setItem('chats', JSON.stringify(updatedChats));
-        
-        setCurrentChat(newChat);
+        source: 'sidebar',
+        name: 'New Chat',
+        metadata: {
+          source: 'sidebar_button'
+        },
+        customPrompt: null
+      });
+
+      if (newChat && pathname !== '/') {
+        router.replace(`/chat/${newChat.id}`, { scroll: false });
       }
     } catch (error) {
       console.error('Error creating new chat:', error);
     }
-  }, [createNewChat, model, dominationField, setCurrentChat]);
+  }, [createNewChat, model, dominationField, pathname, router]);
 
-  const handleChatClick = useCallback((chat: Chat) => {
-    if (setCurrentChat && loadChat) {
-      setCurrentChat(chat);
-      loadChat(chat.id);
+  const handleChatClick = useCallback(async (chatId: string) => {
+    try {
+      const chat = await loadChat(chatId);
+      if (chat) {
+        setCurrentChat(chat);
+        router.push(`/chat/${chat.id}`);
+      }
+    } catch (error) {
+      console.error('Error loading chat:', error);
     }
-  }, [setCurrentChat, loadChat]);
+  }, [setCurrentChat, router, loadChat]);
 
-  const handleDeleteChat = useCallback((chatId: string, e: React.MouseEvent) => {
+  const handleDeleteChat = useCallback(async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (deleteChat) {
-      deleteChat(chatId);
+    try {
+      // Delete from database
+      await storageActions.database.deleteChat(chatId);
+      // Remove from local storage
+      storageActions.persistent.removeChat(chatId);
+      // Refresh the chat list
+      await fetchChats();
+    } catch (error) {
+      console.error('Error deleting chat:', error);
     }
-  }, [deleteChat]);
+  }, [fetchChats]);
+
+  // Memoize chat list rendering
+  const chatList = useMemo(() => {
+    if (isLoading) {
+      return (
+        <div className="text-white text-center p-4 mt-2">
+          <p className="text-sm text-gray-400">Loading chats...</p>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="text-white text-center p-4 mt-2">
+          <p className="text-sm text-red-400">{error}</p>
+          <button 
+            onClick={() => fetchChats()}
+            className="text-sm text-blue-400 hover:text-blue-300 mt-2"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
+    if (!chats || chats.length === 0) {
+      return (
+        <div key="empty-state" className="text-white text-center p-4 mt-2 bg-gray-700/20 mx-4 rounded-lg border border-gray-600/50">
+          <p className="text-sm text-gray-400">Start a new chat by clicking the button above</p>
+        </div>
+      );
+    }
+
+    return chats.map((chat: Chat) => (
+      <div
+        key={`chat-${chat.id}`}
+        className={`mx-2 p-2 rounded cursor-pointer relative group flex items-center justify-between ${
+          currentChat?.id === chat.id ? 'bg-blue-600' : 'hover:bg-gray-700'
+        }`}
+        onClick={() => handleChatClick(chat.id)}
+      >
+        <span className="text-white truncate flex-1">
+          {chat?.name || (chat.metadata?.source === 'input' ? 'Chat from Input' : 'New Chat')}
+        </span>
+        <DeleteChatButton chat={chat} onDelete={handleDeleteChat} />
+      </div>
+    ));
+  }, [chats, currentChat?.id, handleChatClick, isLoading, error, fetchChats, handleDeleteChat]);
+
+  // Debug in useEffect
+  useEffect(() => {
+    if (chats?.length) {
+      console.log('Debug chats:', chats);
+    }
+  }, [chats]);
 
   // Mobile toggle button when sidebar is hidden
   if (!sidebarVisible) {
@@ -175,51 +269,7 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
 
       {/* Middle Section - Chat List */}
       <div className="flex-1 overflow-y-auto py-2">
-        {Array.isArray(chats) && chats.length > 0 ? (
-          chats.filter(chat => chat?.id).map((chat) => (
-            <div
-              key={chat.id}
-              className={`mx-2 p-2 rounded cursor-pointer relative group flex items-center justify-between ${
-                currentChat?.id === chat.id ? 'bg-blue-600' : 'hover:bg-gray-700'
-              }`}
-              onClick={() => handleChatClick(chat)}
-            >
-              <span className="text-white truncate flex-1">
-                {chat?.name || 'New Chat'}
-              </span>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="opacity-0 group-hover:opacity-100 ml-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-400" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Chat</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete this chat? This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={(e) => handleDeleteChat(chat.id, e)}>
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          ))
-        ) : (
-          <div className="text-gray-500 text-center p-4">
-            Click "New Chat" to start a conversation
-          </div>
-        )}
+        {chatList}
       </div>
 
       {/* Bottom Section - Custom Prompt */}
