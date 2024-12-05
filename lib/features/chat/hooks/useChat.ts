@@ -1,270 +1,346 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Chat, ChatMessage, CreateNewChatParams } from '@/lib/types/chat/chat';
+import { Chat, ChatMessage, ChatState } from '@/lib/types/chat/chat';
 import { useChatContext } from '../context/useChatContext';
 import { ChatService } from '@/lib/services/chat/ChatService';
-import { handleError } from '@/lib/utils/error';
+import { ErrorHandler } from '@/lib/utils/error';
 import ReactDOM from 'react-dom';
+import { ChatStorageManager } from '../utils/ChatStorageManager';
+import { DOMINATION_FIELDS, DominationField } from '@/lib/features/ai/config/constants';
+import { DEFAULT_MODEL } from '@/lib/features/ai/config/constants';
 
 export function useChat() {
-  const { state, dispatch, handleChatCreation } = useChatContext();
+  const { state, dispatch, setLoading, setProcessing } = useChatContext();
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, _setProcessing] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
-  const [dominationField, setDominationField] = useState('Normal Chat');
-  const [model, setModel] = useState('llama3.1');
-  const [customPrompt, setCustomPrompt] = useState<string | undefined>();
   
-  // Use ref to track if we're in a render cycle
   const isUpdatingRef = useRef(false);
+  const loadingStateRef = useRef(false);
+  const previousChatIdRef = useRef<string | null>(null);
 
-  // Sync with context only when ID changes
-  useEffect(() => {
-    if (state.currentChat?.id !== currentChat?.id) {
-      setCurrentChat(state.currentChat);
+  // Initialize states with proper refs to prevent loops
+  const [model, setModel] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedModel = localStorage.getItem('selectedModel');
+      return savedModel && savedModel !== 'null' ? savedModel : DEFAULT_MODEL;
     }
-  }, [state.currentChat?.id]);
+    return DEFAULT_MODEL;
+  });
 
-  useEffect(() => {
-    console.log('useChat state update:', {
-      currentChat,
-      streamingMessage,
-      isLoading,
-      error
-    });
-  }, [currentChat, streamingMessage, isLoading, error]);
-
-  const updateCurrentChat = useCallback((updater: (prev: Chat | null) => Chat | null) => {
-    console.log('Updating chat:', {
-      previous: currentChat,
-      isUpdating: isUpdatingRef.current
-    });
-    
-    setCurrentChat(prev => {
-      const updated = updater(prev);
-      console.log('Chat update result:', updated);
-      return updated;
-    });
-  }, [dispatch, state.chats]);
-
-  const addMessage = useCallback((message: ChatMessage) => {
-    if (!message.chatId) {
-      console.error('Cannot add message: No chat ID provided');
-      return null;
-    }
-
-    // Schedule message update for next tick
-    Promise.resolve().then(() => {
-      updateCurrentChat(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          messages: [...(prev.messages || []), message],
-          updatedAt: new Date().toISOString()
-        };
-      });
-    });
-
-    return message;
-  }, [updateCurrentChat]);
-
-  const createNewChat = useCallback(async (params: CreateNewChatParams): Promise<Chat | null> => {
-    try {
-      // Ensure required fields with defaults
-      const chatData: CreateNewChatParams = {
-        model: params.model || model || 'llama3.1',
-        dominationField: params.dominationField || dominationField || 'Normal Chat',
-        source: params.source,
-        name: params.source === 'input' ? 
-          (params.name || params.metadata?.initialMessage?.substring(0, 30)) : 
-          'New Chat',
-        metadata: params.metadata || null,
-        customPrompt: params.customPrompt || null
-      };
-
-      const chat = await ChatService.createChat(chatData);
+  const [dominationField, setDominationField] = useState<DominationField>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('selectedDomField');
+      const defaultField = stored && Object.values(DOMINATION_FIELDS).includes(stored as DominationField)
+        ? stored as DominationField
+        : DOMINATION_FIELDS.NORMAL_CHAT;
       
-      if (!chat) {
-        throw new Error('Failed to create chat');
-      }
+      // Ensure we always have a valid value in localStorage
+      localStorage.setItem('selectedDomField', defaultField);
+      return defaultField;
+    }
+    return DOMINATION_FIELDS.NORMAL_CHAT;
+  });
 
-      // Create initial message if from input
-      let initialMessage: ChatMessage | null = null;
-      if (params.source === 'input' && params.metadata?.initialMessage) {
-        initialMessage = {
-          id: crypto.randomUUID(),
-          chatId: chat.id,
-          messagePairId: crypto.randomUUID(),
-          userContent: params.metadata.initialMessage,
-          assistantContent: null,
-          userRole: 'user',
-          assistantRole: 'assistant',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          status: 'sending',
-          dominationField: chat.dominationField,
-          model: chat.model
-        };
-      }
+  const [customPrompt, setCustomPrompt] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customPrompt') || null;
+    }
+    return null;
+  });
 
-      // Prepare chat with initial message
-      const chatWithMessage = initialMessage ? {
-        ...chat,
-        messages: [initialMessage]
-      } : chat;
+  // Single effect to handle all state synchronization
+  useEffect(() => {
+    if (isUpdatingRef.current) return;
+    
+    const chatId = currentChat?.id;
+    if (chatId !== previousChatIdRef.current) {
+      isUpdatingRef.current = true;
+      previousChatIdRef.current = chatId || null;
 
-      // Batch UI updates
-      ReactDOM.unstable_batchedUpdates(() => {
-        setCurrentChat(chatWithMessage);
-        dispatch({
-          type: 'UPDATE_CHAT_STATE',
-          payload: {
-            currentChat: chatWithMessage,
-            chats: [...state.chats, chat]
+      const shouldUpdate = 
+        (currentChat?.model && currentChat.model !== model) ||
+        (currentChat?.dominationField && currentChat.dominationField !== dominationField) ||
+        (currentChat?.customPrompt !== customPrompt);
+
+      if (shouldUpdate) {
+        ReactDOM.unstable_batchedUpdates(() => {
+          if (currentChat?.model && currentChat.model !== model) {
+            setModel(currentChat.model);
+            localStorage.setItem('selectedModel', currentChat.model);
+          }
+
+          if (currentChat?.dominationField && currentChat.dominationField !== dominationField) {
+            const validDomField = Object.values(DOMINATION_FIELDS)
+              .includes(currentChat.dominationField as DominationField)
+                ? currentChat.dominationField as DominationField
+                : DOMINATION_FIELDS.NORMAL_CHAT;
+            
+            setDominationField(validDomField);
+            localStorage.setItem('selectedDomField', validDomField);
+          }
+
+          const currentPrompt = typeof currentChat?.customPrompt === 'string' 
+            ? currentChat.customPrompt 
+            : null;
+
+          if (currentPrompt !== customPrompt) {
+            setCustomPrompt(currentPrompt);
+            if (currentPrompt) {
+              localStorage.setItem('customPrompt', currentPrompt);
+            } else {
+              localStorage.removeItem('customPrompt');
+            }
           }
         });
-
-        // Store in storage with messages
-        localStorage.setItem(`chat_${chat.id}`, JSON.stringify(chatWithMessage));
-        sessionStorage.setItem(`chat_${chat.id}`, JSON.stringify(chatWithMessage));
-        sessionStorage.setItem('currentChat', JSON.stringify(chatWithMessage));
-      });
-
-      // Save initial message if exists
-      if (initialMessage) {
-        await ChatService.saveMessage(initialMessage);
       }
 
-      return chatWithMessage;
-    } catch (error) {
-      console.error('Create chat error:', error);
-      throw error;
+      isUpdatingRef.current = false;
     }
-  }, [dispatch, state.chats, model, dominationField]);
+  }, [currentChat?.id]);
 
-  const loadChat = useCallback(async (chatId: string): Promise<Chat | null> => {
+  // Sync processing state with context
+  useEffect(() => {
+    setProcessing(isProcessing);
+  }, [isProcessing, setProcessing]);
+
+  // Handle processing state changes
+  const handleProcessing = useCallback((processing: boolean) => {
+    _setProcessing(processing);
+    setProcessing(processing);
+  }, [setProcessing]);
+
+  // Core chat operations
+  const sendMessage = useCallback(async (content: string, chatId: string) => {
+    console.log('🚀 [useChat] sendMessage started with:', { 
+      content, 
+      chatId, 
+      dominationField,
+      customPrompt: typeof currentChat?.customPrompt === 'string' 
+        ? currentChat.customPrompt 
+        : undefined
+    });
+
+    const messagePairId = crypto.randomUUID();
+    const response = await ChatService.sendMessage({
+      message: content,
+      chatId,
+      model,
+      dominationField,
+      messagePairId,
+      customPrompt: typeof currentChat?.customPrompt === 'string' 
+        ? currentChat.customPrompt 
+        : undefined
+    });
+
+    return { response, messagePairId };
+  }, [model, dominationField, currentChat]);
+
+  // State management
+  const updateState = useCallback((updates: Partial<ChatState>) => {
+    const fullState: ChatState = {
+      ...state,
+      ...updates
+    };
+    
+    dispatch({ 
+      type: 'UPDATE_CHAT_STATE', 
+      payload: fullState
+    });
+  }, [dispatch, state]);
+
+  const updateCurrentChat = useCallback(async (updater: (prev: Chat | null) => Chat | null) => {
+    if (loadingStateRef.current) {
+      return;
+    }
+
+    const updatedChat = updater(state.currentChat);
+    if (!updatedChat) return;
+
+    // Batch updates to prevent multiple re-renders
+    ReactDOM.unstable_batchedUpdates(async () => {
+      await ChatStorageManager.updateChat(updatedChat);
+      dispatch({
+        type: 'SET_CURRENT_CHAT',
+        payload: updatedChat
+      });
+      setCurrentChat(updatedChat);
+    });
+  }, [dispatch, state.currentChat]);
+
+  const loadChat = useCallback(async (chatId: string) => {
+    if (!chatId) {
+      throw new Error('chat_id is required');
+    }
+
     try {
+      // Set loading state and ref
+      loadingStateRef.current = true;
       setIsLoading(true);
-      
-      // Try to get from localStorage first
-      const persistedChat = localStorage.getItem(`chat_${chatId}`);
-      if (persistedChat) {
-        const chat = JSON.parse(persistedChat);
-        setCurrentChat(chat);
-        dispatch({ type: 'SET_CURRENT_CHAT', payload: chat });
-        return chat;
-      }
 
-      // Fallback to API
-      const chat = await ChatService.getChat(chatId);
+      const chat = await ChatService.loadChat(chatId);
+      
       if (chat) {
-        setCurrentChat(chat);
-        dispatch({ type: 'SET_CURRENT_CHAT', payload: chat });
-        localStorage.setItem(`chat_${chatId}`, JSON.stringify(chat));
-        return chat;
+        ReactDOM.unstable_batchedUpdates(() => {
+          dispatch({
+            type: 'SET_CURRENT_CHAT',
+            payload: chat
+          });
+          setCurrentChat(chat);
+        });
       }
-      return null;
+      return chat;
     } catch (error) {
-      handleError(error, setError);
-      return null;
+      const appError = await ErrorHandler.handleChatError(error, 'chat loading');
+      throw appError;
     } finally {
-      setIsLoading(false);
+      // Reset loading states together
+      ReactDOM.unstable_batchedUpdates(() => {
+        loadingStateRef.current = false;
+        setIsLoading(false);
+      });
     }
   }, [dispatch]);
-
-  const sendMessage = useCallback(async (content: string, chatId: string) => {
-    try {
-      if (!model || !dominationField) {
-        throw new Error('Missing required fields');
-      }
-
-      const response = await ChatService.sendMessage({
-        message: content,
-        chatId,
-        model,
-        dominationField,
-        messagePairId: crypto.randomUUID(),
-        customPrompt: currentChat?.customPrompt || undefined
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to send message');
-      }
-
-      return response;
-    } catch (error) {
-      handleError(error, setError);
-      throw error;
-    }
-  }, [model, dominationField, currentChat]);
 
   const deleteChat = useCallback(async (chatId: string) => {
     try {
       setIsLoading(true);
-      await ChatService.deleteChat(chatId);
+      await ChatStorageManager.deleteChat(chatId);
       
-      dispatch({
-        type: 'SET_CHATS',
-        payload: state.chats.filter(chat => chat.id !== chatId)
+      ReactDOM.unstable_batchedUpdates(() => {
+        dispatch({
+          type: 'SET_CHATS',
+          payload: state.chats.filter(chat => chat.id !== chatId)
+        });
+        
+        if (state.currentChat?.id === chatId) {
+          setCurrentChat(null);
+        }
       });
-      
-      if (state.currentChat?.id === chatId) {
-        setCurrentChat(null);
-      }
     } catch (error) {
-      handleError(error, setError);
+      const appError = await ErrorHandler.handleChatError(error, 'chat deletion', setError);
     } finally {
       setIsLoading(false);
     }
   }, [dispatch, state.chats, state.currentChat]);
 
   const updateModel = useCallback(async (newModel: string) => {
+    console.log('🔄 [useChat] Updating model:', { newModel, currentChat });
+    
+    setModel(newModel);
+
     try {
-      setModel(newModel); // Keep this for global model state
-      
-      if (currentChat?.id) {
-        // Use updateCurrentChat to maintain consistency with other state updates
-        updateCurrentChat(prev => prev ? {
-          ...prev,
-          model: newModel,
-          updatedAt: new Date().toISOString()
-        } : null);
-        
-        // Update in localStorage
-        const chatData = localStorage.getItem(`chat_${currentChat.id}`);
-        if (chatData) {
-          const updatedChat = { ...JSON.parse(chatData), model: newModel };
-          localStorage.setItem(`chat_${currentChat.id}`, JSON.stringify(updatedChat));
-        }
+      if (!currentChat?.id) {
+        console.log('ℹ️ [useChat] No current chat, only updating local model state');
+        return;
       }
+
+      console.log('📝 [useChat] Updating chat model:', { 
+        chatId: currentChat.id, 
+        oldModel: currentChat.model, 
+        newModel 
+      });
+
+      const updatedChat = await ChatService.updateModel(currentChat.id, newModel);
+      await updateCurrentChat(() => updatedChat);
+      
+      console.log('✅ [useChat] Chat model updated successfully');
     } catch (error) {
-      handleError(error, setError);
-      throw error;
+      console.error('💥 [useChat] Error updating model:', error);
+      const appError = await ErrorHandler.handleChatError(error, 'chat model update', setError);
+      throw appError;
     }
   }, [currentChat?.id, updateCurrentChat]);
 
+  // Improved sync with context
+  useEffect(() => {
+    if (!isUpdatingRef.current && !loadingStateRef.current && state.currentChat?.id !== currentChat?.id) {
+      isUpdatingRef.current = true;
+      ReactDOM.unstable_batchedUpdates(() => {
+        if (state.currentChat) {
+          setCurrentChat(state.currentChat);
+        } else if (!isLoading && !loadingStateRef.current) {
+          setCurrentChat(null);
+        }
+      });
+      isUpdatingRef.current = false;
+    }
+  }, [state.currentChat?.id, isLoading]);
+
+  // Add debug logs for currentChat changes
+  useEffect(() => {
+    console.log('🔄 [useChat] currentChat changed:', {
+      id: currentChat?.id,
+      currentChat
+    });
+  }, [currentChat]);
+
+  const updateChatName = useCallback(async (chatId: string, newName: string) => {
+    try {
+      const updatedChat = await ChatService.updateChatName(chatId, newName);
+      await updateCurrentChat(() => updatedChat);
+      
+      // Update chats list in sidebar
+      dispatch({
+        type: 'SET_CHATS',
+        payload: state.chats.map(chat => 
+          chat.id === chatId ? { ...chat, name: newName } : chat
+        )
+      });
+    } catch (error) {
+      console.error('Error updating chat name:', error);
+    }
+  }, [updateCurrentChat, dispatch, state.chats]);
+
+  // Add a new method to handle domination field updates
+  const updateDominationField = useCallback(async (newField: DominationField) => {
+    if (!Object.values(DOMINATION_FIELDS).includes(newField)) {
+      throw new Error('Invalid domination field');
+    }
+
+    setDominationField(newField);
+    localStorage.setItem('selectedDomField', newField);
+
+    if (currentChat?.id) {
+      const updatedChat = await ChatService.updateChat({
+        ...currentChat,
+        dominationField: newField
+      });
+      await updateCurrentChat(() => updatedChat);
+    }
+  }, [currentChat, updateCurrentChat]);
+
   return {
+    // State
     currentChat,
-    setCurrentChat,
-    updateCurrentChat,
     error,
-    setError,
     isLoading,
-    setIsLoading,
+    isProcessing,
     streamingMessage,
-    setStreamingMessage,
-    dominationField,
-    setDominationField,
     model,
-    setModel,
+    dominationField,
     customPrompt,
-    setCustomPrompt,
-    createNewChat,
-    deleteChat,
-    loadChat,
-    sendMessage,
-    addMessage,
     chats: state.chats,
-    updateModel
+
+    // State setters
+    setCurrentChat,
+    setError,
+    setIsLoading,
+    setProcessing: handleProcessing,
+    setStreamingMessage,
+    setModel,
+    setDominationField,
+    setCustomPrompt,
+
+    // Core operations
+    sendMessage,
+    updateState,
+    updateCurrentChat,
+    loadChat,
+    deleteChat,
+    updateModel,
+    updateChatName,
+    updateDominationField,
   };
 } 

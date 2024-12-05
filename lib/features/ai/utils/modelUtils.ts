@@ -1,8 +1,6 @@
 import { OllamaService } from '../services/ollamaService';
 import { OllamaModel, ModelOption } from '../types/ollama';
 
-export const DEFAULT_MODEL = 'llama3:latest';
-
 export const transformOllamaModel = (model: OllamaModel): ModelOption => {
   return {
     value: model.name,
@@ -31,9 +29,6 @@ export const getAvailableModels = async (): Promise<ModelOption[]> => {
 };
 
 export const normalizeModelName = (name: string | undefined | null): string => {
-  if (!name) return DEFAULT_MODEL;
-  
-  if (name.includes(':')) return name;
-  
-  return `${name}:latest`;
+  return name || '';
+
 };

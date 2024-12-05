@@ -3,18 +3,24 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useChat } from '@/lib/features/chat/hooks/useChat';
-import { useChatContext } from '@/lib/features/chat/context/useChatContext';
 import SharedLayout from '@/components/chat/layout/SharedLayout';
 import { ChatArea } from '@/components/chat/area/ChatArea';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import ReactDOM from 'react-dom';
+
+const LoadingState = () => (
+  <SharedLayout>
+    <div className="flex items-center justify-center h-full">
+      <div className="text-white">Loading chat...</div>
+    </div>
+  </SharedLayout>
+);
 
 const ChatErrorFallback = ({ error }: { error: Error }) => (
   <SharedLayout>
     <div className="flex items-center justify-center h-full">
-      <div className="text-center">
+      <div className="text-center text-white">
         <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
-        <p className="text-gray-600">Please refresh the page to try again</p>
+        <p className="text-gray-400">{error.message}</p>
       </div>
     </div>
   </SharedLayout>
@@ -23,55 +29,56 @@ const ChatErrorFallback = ({ error }: { error: Error }) => (
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
-  const { state, dispatch } = useChatContext();
-  const { loadChat, currentChat, updateCurrentChat } = useChat();
-  const [isLoading, setIsLoading] = useState(true);
+  const { loadChat, isLoading: chatIsLoading } = useChat();
+  const [pageIsLoading, setPageIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadedRef = useRef(false);
 
   useEffect(() => {
     const initializeChat = async () => {
-      if (!params?.id || loadedRef.current) return;
+      const chatId = params?.id;
+      if (!chatId || loadedRef.current) return;
+
+      if (typeof chatId !== 'string') {
+        setError('Invalid chat ID');
+        setPageIsLoading(false);
+        return;
+      }
 
       try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Get persisted chat state
-        const persistedChat = sessionStorage.getItem(`chat_${params.id}`);
-        const chatState = persistedChat ? JSON.parse(persistedChat) : null;
-        
-        if (chatState) {
-          // Use persisted state immediately
-          ReactDOM.unstable_batchedUpdates(() => {
-            updateCurrentChat(() => chatState);
-            loadedRef.current = true;
-            setIsLoading(false);
-          });
+        setPageIsLoading(true);
+        const chat = await loadChat(chatId);
+        if (!chat) {
+          router.push('/');
           return;
         }
-
-        // Load from API if no persisted state
-        const loadedChat = await loadChat(params.id as string);
-        if (loadedChat) {
-          ReactDOM.unstable_batchedUpdates(() => {
-            updateCurrentChat(() => loadedChat);
-            sessionStorage.setItem(`chat_${params.id}`, JSON.stringify(loadedChat));
-            loadedRef.current = true;
-          });
-        } else {
-          router.push('/');
-        }
+        loadedRef.current = true;
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load chat';
+        setError(errorMessage);
         console.error('Error loading chat:', err);
-        setError('Failed to load chat');
       } finally {
-        setIsLoading(false);
+        setPageIsLoading(false);
       }
     };
 
     initializeChat();
-  }, [params?.id]);
+  }, [params?.id, router, loadChat]);
+
+  // Show loading state if either page or chat is loading
+  if (pageIsLoading || chatIsLoading) {
+    return <LoadingState />;
+  }
+
+  if (error) {
+    return (
+      <SharedLayout>
+        <div className="flex items-center justify-center h-full text-white">
+          Error: {error}
+        </div>
+      </SharedLayout>
+    );
+  }
 
   return (
     <ErrorBoundary FallbackComponent={ChatErrorFallback}>

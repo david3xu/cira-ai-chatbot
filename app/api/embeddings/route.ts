@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const embeddingResponse = await EmbeddingService.createEmbedding(input, model);
+    const embeddingResponse = await EmbeddingService.createEmbedding(input);
 
     return NextResponse.json(embeddingResponse);
   } catch (error) {

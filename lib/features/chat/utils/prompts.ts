@@ -1,8 +1,8 @@
-import { ChatMessage } from '../types/chat';
+import { ChatMessage } from '@/lib/types/chat/chat';
 
 export const formatPreviousConversation = (messages: ChatMessage[]): string => {
   return messages
-    .map(msg => `${msg.role}: ${msg.content}`)
+    .map(msg => `${msg.userRole}: ${msg.userContent}`)
     .join('\n\n');
 };
 

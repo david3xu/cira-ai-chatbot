@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useChat } from '@/lib/features/chat/hooks/useChat';
+import { useChat } from '@/lib/features/chat/hooks';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { ChatService } from '@/lib/services/chat/ChatService';
 import { Sparkles } from 'lucide-react';
 import { forwardRef } from 'react';
 import { ButtonProps } from '@/components/ui/button';
+import { handleError } from '@/lib/utils/error';
 
 const PromptButton = forwardRef<HTMLButtonElement, ButtonProps>(
   (props, ref) => (
@@ -15,7 +16,7 @@ const PromptButton = forwardRef<HTMLButtonElement, ButtonProps>(
 PromptButton.displayName = 'PromptButton';
 
 export function CustomPromptArea() {
-  const { currentChat, updateCurrentChat } = useChat();
+  const { currentChat, updateCurrentChat, setError, setCustomPrompt } = useChat();
   const [prompt, setPrompt] = useState(currentChat?.customPrompt || '');
   const [isEditing, setIsEditing] = useState(false);
 
@@ -24,16 +25,17 @@ export function CustomPromptArea() {
   }, [currentChat?.customPrompt]);
 
   const handleSave = async () => {
-    if (!currentChat) return;
+    if (!currentChat?.id) {
+      setError('Please select a chat before setting a custom prompt');
+      return;
+    }
+
     try {
-      await ChatService.updatePrompt(currentChat.id, prompt);
-      updateCurrentChat((prev) => prev ? {
-        ...prev,
-        customPrompt: prompt
-      } : null);
+      const updatedChat = await ChatService.updatePrompt(currentChat.id, prompt || '');
+      updateCurrentChat(() => updatedChat);
       setIsEditing(false);
     } catch (error) {
-      console.error('Failed to update prompt:', error);
+      handleError(error, setError);
     }
   };
 

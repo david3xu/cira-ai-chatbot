@@ -1,4 +1,4 @@
-import { Chat, ChatMessage } from '@/lib/types/chat/chat';
+import { Chat, ChatMessage, ChatUpdate } from '@/lib/types/chat/chat';
 
 export const persistentActions = {
   saveChat: (chat: Chat) => {
@@ -42,5 +42,24 @@ export const persistentActions = {
   getChat: (chatId: string): Chat | null => {
     const chatData = localStorage.getItem(`chat_${chatId}`);
     return chatData ? JSON.parse(chatData) : null;
-  }
+  },
+  
+  getChats: (): Chat[] => {
+    const chats = localStorage.getItem('chats');
+    return chats ? JSON.parse(chats) : [];
+  },
+  
+  updateChat: async (chatId: string, updates: ChatUpdate) => {
+    const chat = persistentActions.getChat(chatId);
+    if (chat) {
+      const updatedChat = {
+        ...chat,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      persistentActions.saveChat(updatedChat);
+      return { data: updatedChat, error: null };
+    }
+    return { data: null, error: new Error('Chat not found') };
+  },
 };

@@ -1,13 +1,15 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
-import { supabaseAdmin } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { OllamaService } from '@/lib/features/ai/services/ollamaService';
 import { fromApiCase } from '@/types/api/transformers';
 
 const newChatSchema = z.object({
-  model: z.string().min(1, 'Model is required'),
+  model: z.string().min(1, 'Model is required').refine(val => val !== 'null', {
+    message: 'Invalid model value'
+  }),
   dominationField: z.string().min(1, 'Domination field is required').default('Normal Chat'),
   name: z.string().optional(),
   customPrompt: z.string().nullable().optional(),
@@ -33,44 +35,85 @@ export async function POST(req: NextRequest) {
     }
 
     const chatId = validatedData.chatId || uuidv4();
-    const { error: txError } = await supabaseAdmin.rpc(
-      'begin_chat_transaction',
-      { chat_id: chatId }
-    );
+
+    // Begin transaction - Updated to use direct table operations
+    const { data: txData, error: txError } = await supabase
+      .from('stale_transactions')
+      .insert({
+        chat_id: chatId,
+        status: 'started'
+      })
+      .select('transaction_id')
+      .single();
 
     if (txError) {
-      throw new Error(`Failed to start transaction: ${txError.message}`);
+      console.error('Transaction error:', txError);
+      return createErrorResponse(
+        `Failed to start transaction: ${txError.message}`, 
+        500
+      );
+    }
+
+    if (!txData?.transaction_id) {
+      console.error('Invalid transaction response:', txData);
+      return createErrorResponse('Failed to start transaction', 500);
     }
 
     try {
-      const { data: chat, error: insertError } = await supabaseAdmin
+      // Verify chat doesn't exist if creating new
+      if (!validatedData.chatId) {
+        const { data: existingChat } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('id', chatId)
+          .single();
+
+        if (existingChat) {
+          throw new Error('Chat already exists');
+        }
+      }
+
+      // Insert or update chat
+      const { data: chat, error: insertError } = await supabase
         .from('chats')
-        .insert({
+        .upsert({
           id: chatId,
-          user_id: '00000000-0000-0000-0000-000000000000',
           model: validatedData.model,
           domination_field: validatedData.dominationField,
           name: validatedData.name || 'New Chat',
           custom_prompt: validatedData.customPrompt,
-          metadata: validatedData.metadata,
+          metadata: validatedData.metadata || {},
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .select()
         .single();
 
       if (insertError) {
-        return createErrorResponse(`Database error: ${insertError.message}`, 500);
+        throw insertError;
       }
 
-      await supabaseAdmin.rpc('commit_chat_transaction', { chat_id: chatId });
+      // Commit transaction - Updated to use direct table operations
+      const { error: commitError } = await supabase
+        .from('stale_transactions')
+        .update({ 
+          status: 'committed',
+          cleaned_at: new Date().toISOString()
+        })
+        .eq('transaction_id', txData.transaction_id)
+        .eq('status', 'started');
+
+      if (commitError) {
+        throw commitError;
+      }
 
       return createSuccessResponse({
         chat: {
-          id: chat.id,
+          id: chatId,
           model: chat.model,
           domination_field: chat.domination_field,
           created_at: chat.created_at,
-          updated_at: chat.created_at,
+          updated_at: chat.updated_at,
           messages: [],
           historyLoaded: true,
           name: chat.name,
@@ -79,17 +122,24 @@ export async function POST(req: NextRequest) {
         }
       });
     } catch (error) {
-      await supabaseAdmin.rpc('rollback_chat_transaction', { chat_id: chatId });
+      // Rollback transaction - Updated to use direct table operations
+      if (txData.transaction_id) {
+        await supabase
+          .from('stale_transactions')
+          .update({ 
+            status: 'rolled_back',
+            cleaned_at: new Date().toISOString()
+          })
+          .eq('transaction_id', txData.transaction_id)
+          .eq('status', 'started');
+      }
       throw error;
     }
   } catch (error) {
-    console.error('New chat creation error:', error);
-    if (error instanceof z.ZodError) {
-      return createErrorResponse(`Validation error: ${error.message}`, 400);
-    }
+    console.error('Chat creation error:', error);
     return createErrorResponse(
-      error instanceof Error ? error.message : 'Failed to create new chat',
-      500
+      error instanceof Error ? error.message : 'Failed to create chat',
+      error instanceof z.ZodError ? 400 : 500
     );
   }
 } 

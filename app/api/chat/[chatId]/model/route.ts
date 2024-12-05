@@ -1,55 +1,48 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
-import { supabaseAdmin } from '@/lib/supabase/client';
-import { OllamaService } from '@/lib/features/ai/services/ollamaService';
+import { withValidation } from '@/lib/middleware/validation';
+import { createSuccessResponse } from '@/lib/utils/apiUtils';
+import { supabase } from '@/lib/supabase/client';
 
-const updateModelSchema = z.object({
-  model: z.string().min(1, 'Model is required')
+const modelUpdateSchema = z.object({
+  model: z.string().min(1, 'Model name is required')
 });
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { chatId: string } }
-) {
-  try {
-    const chatId = params.chatId;
-    const body = await req.json();
-    const { model } = await updateModelSchema.parseAsync(body);
+export const POST = withValidation(
+  modelUpdateSchema, 
+  async (validatedData: z.infer<typeof modelUpdateSchema>, req: NextRequest) => {
+    // Get chatId from URL params using the req object
+    const chatId = req.url.split('/').slice(-2)[0];
 
-    // Verify model exists
-    const models = await OllamaService.getModels(true);
-    const modelExists = models.some(m => 
-      m.name.startsWith(model) || 
-      m.name.includes(model)
-    );
-    
-    if (!modelExists) {
-      return createErrorResponse(`Model ${model} not found`, 400);
-    }
-
-    // Update the chat model
-    const { error } = await supabaseAdmin
+    // Update chat model in database
+    const { data: updatedChat, error: chatError } = await supabase
       .from('chats')
-      .update({ model })
-      .eq('id', chatId);
+      .update({ 
+        model: validatedData.model,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', chatId)
+      .select('*')
+      .single();
 
-    if (error) {
-      throw new Error(`Failed to update model: ${error.message}`);
+    if (chatError) {
+      throw new Error('Failed to update chat model');
     }
 
-    return createSuccessResponse({ 
+    // Update all unprocessed messages
+    const { error: messagesError } = await supabase
+      .from('chat_history')
+      .update({ model: validatedData.model })
+      .eq('chat_id', chatId);
+
+    if (messagesError) {
+      throw new Error('Failed to update message models');
+    }
+
+    return createSuccessResponse({
       message: 'Model updated successfully',
-      model 
+      chat: updatedChat,
+      model: validatedData.model
     });
-  } catch (error) {
-    console.error('Error updating model:', error);
-    if (error instanceof z.ZodError) {
-      return createErrorResponse(`Validation error: ${error.message}`, 400);
-    }
-    return createErrorResponse(
-      error instanceof Error ? error.message : 'Failed to update model',
-      500
-    );
   }
-} 
+); 

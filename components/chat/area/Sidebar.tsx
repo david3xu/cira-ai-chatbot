@@ -23,9 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { dominationFieldsData } from '@/lib/data/domFields';
+import { getDominationFieldOptions } from '@/lib/features/ai/config/constants';
 import { CustomPromptArea } from './CustomPromptArea';
 import { storageActions } from '@/lib/features/chat/actions/storage';
+import { ChatService } from '@/lib/services/chat/ChatService';
+import { DOMINATION_FIELDS, DominationField, isValidDominationField } from '@/lib/features/ai/config/constants';
+import { supabase } from '@/lib/supabase/client';
 
 interface SidebarProps {
   onSidebarToggle: (visible: boolean) => void;
@@ -69,19 +72,20 @@ SidebarButton.displayName = 'SidebarButton';
 export function Sidebar({ onSidebarToggle }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { state, dispatch } = useChatContext();
-  const {
+  const { 
     currentChat,
     setCurrentChat,
-    createNewChat,
     dominationField,
     setDominationField,
+    updateDominationField,
     model,
     chats,
     loadChat,
     isLoading,
     error,
-    fetchChats
+    fetchChats,
+    updateCurrentChat,
+    setError
   } = useChatSidebar();
 
   const [sidebarVisible, setSidebarVisible] = useState(() => {
@@ -90,6 +94,17 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
     }
     return true;
   });
+
+  // Add local storage for domination field
+  const [selectedDomField, setSelectedDomField] = useState<DominationField>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('selectedDomField') as DominationField) || DOMINATION_FIELDS.NORMAL_CHAT;
+    }
+    return DOMINATION_FIELDS.NORMAL_CHAT;
+  });
+
+  // Add state for chat names
+  const [chatNames, setChatNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     localStorage.setItem('sidebarVisible', String(sidebarVisible));
@@ -103,26 +118,128 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
     }
   }, []);
 
+  // Handle domination field change
+  const handleDomFieldChange = useCallback(async (value: string) => {
+    if (isValidDominationField(value)) {
+      console.log('🔄 [Sidebar] Domination field changing to:', value);
+      
+      try {
+        // Update local state and storage
+        setSelectedDomField(value as DominationField);
+        await updateDominationField(value as DominationField);
+        
+        console.log('✅ [Sidebar] Domination field updated successfully');
+      } catch (error) {
+        console.error('❌ [Sidebar] Error updating domination field:', error);
+        setError(error instanceof Error ? error.message : 'Failed to update domination field');
+      }
+    }
+  }, [updateDominationField, setError]);
+
+  // Sync with current chat's domination field
+  useEffect(() => {
+    if (currentChat?.dominationField && currentChat.dominationField !== selectedDomField) {
+      setSelectedDomField(currentChat.dominationField as DominationField);
+      localStorage.setItem('selectedDomField', currentChat.dominationField);
+    }
+  }, [currentChat?.dominationField, selectedDomField]);
+
+  // Add function to fetch and update chat name
+  const updateChatName = useCallback(async (chat: Chat) => {
+    try {
+      // Skip if chat already has a custom name
+      if (chat.name && chat.name !== 'New Chat') return;
+
+      // Fetch chat history with proper headers
+      const { data: messages, error } = await supabase
+        .from('chat_history')
+        .select('user_content, created_at')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (error) {
+        console.error('Error fetching chat history:', error);
+        return;
+      }
+
+      // Check if we have any messages
+      if (messages && messages.length > 0 && messages[0].user_content) {
+        const newName = messages[0].user_content.slice(0, 30);
+        console.log('Updating chat name:', { chatId: chat.id, newName });
+        
+        try {
+          await ChatService.updateChatName(chat.id, newName);
+          setChatNames(prev => ({ ...prev, [chat.id]: newName }));
+        } catch (nameError) {
+          console.error('Error updating chat name:', nameError);
+        }
+      }
+    } catch (error) {
+      console.error('Error in updateChatName:', error);
+    }
+  }, []);
+
+  // Update useEffect to fetch chat names with debounce
+  useEffect(() => {
+    const updateChatsWithDelay = async () => {
+      if (chats?.length) {
+        for (const chat of chats) {
+          if (chat.name === 'New Chat') {
+            await updateChatName(chat);
+            // Add small delay between requests to prevent rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+      }
+    };
+
+    updateChatsWithDelay();
+  }, [chats, updateChatName]);
+
   const handleNewChat = useCallback(async () => {
     try {
-      const newChat = await createNewChat({
-        model: model || 'llama3.1',
-        dominationField: dominationField || 'Normal Chat',
+      const domField = selectedDomField || DOMINATION_FIELDS.NORMAL_CHAT;
+      
+      console.log('🎯 [Sidebar] Creating new chat with:', { 
+        model, 
+        dominationField: domField,
+        customPrompt: currentChat?.customPrompt 
+      });
+
+      const newChat = await ChatService.createFromSidebar({
+        model: model || 'null',
+        dominationField: domField,
         source: 'sidebar',
         name: 'New Chat',
         metadata: {
-          source: 'sidebar_button'
+          source: 'sidebar_button',
+          selectedDomField: domField
         },
-        customPrompt: null
+        customPrompt: currentChat?.customPrompt || null
       });
 
-      if (newChat && pathname !== '/') {
-        router.replace(`/chat/${newChat.id}`, { scroll: false });
+      console.log('✅ [Sidebar] New chat created:', {
+        id: newChat.id,
+        model: newChat.model,
+        dominationField: newChat.dominationField
+      });
+
+      if (newChat) {
+        // Update state with the new chat
+        await updateCurrentChat(() => ({
+          ...newChat,
+          dominationField: domField
+        }));
+        
+        // Navigate to the new chat
+        router.push(`/chat/${newChat.id}`);
       }
     } catch (error) {
-      console.error('Error creating new chat:', error);
+      console.error('❌ [Sidebar] Error creating chat:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create chat');
     }
-  }, [createNewChat, model, dominationField, pathname, router]);
+  }, [model, selectedDomField, currentChat, updateCurrentChat, router]);
 
   const handleChatClick = useCallback(async (chatId: string) => {
     try {
@@ -153,21 +270,14 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
   // Memoize chat list rendering
   const chatList = useMemo(() => {
     if (isLoading) {
-      return (
-        <div className="text-white text-center p-4 mt-2">
-          <p className="text-sm text-gray-400">Loading chats...</p>
-        </div>
-      );
+      return <div className="text-white text-center p-4 mt-2">Loading chats...</div>;
     }
 
     if (error) {
       return (
         <div className="text-white text-center p-4 mt-2">
           <p className="text-sm text-red-400">{error}</p>
-          <button 
-            onClick={() => fetchChats()}
-            className="text-sm text-blue-400 hover:text-blue-300 mt-2"
-          >
+          <button onClick={() => fetchChats()} className="text-sm text-blue-400 hover:text-blue-300 mt-2">
             Try Again
           </button>
         </div>
@@ -176,27 +286,31 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
 
     if (!chats || chats.length === 0) {
       return (
-        <div key="empty-state" className="text-white text-center p-4 mt-2 bg-gray-700/20 mx-4 rounded-lg border border-gray-600/50">
-          <p className="text-sm text-gray-400">Start a new chat by clicking the button above</p>
+        <div className="text-white text-center p-4 mt-2 bg-gray-700/20 mx-4 rounded-lg border border-gray-600/50">
+          <p className="text-sm text-gray-400">Start a new chat</p>
         </div>
       );
     }
 
-    return chats.map((chat: Chat) => (
-      <div
-        key={`chat-${chat.id}`}
-        className={`mx-2 p-2 rounded cursor-pointer relative group flex items-center justify-between ${
-          currentChat?.id === chat.id ? 'bg-blue-600' : 'hover:bg-gray-700'
-        }`}
-        onClick={() => handleChatClick(chat.id)}
-      >
-        <span className="text-white truncate flex-1">
-          {chat?.name || (chat.metadata?.source === 'input' ? 'Chat from Input' : 'New Chat')}
-        </span>
-        <DeleteChatButton chat={chat} onDelete={handleDeleteChat} />
-      </div>
-    ));
-  }, [chats, currentChat?.id, handleChatClick, isLoading, error, fetchChats, handleDeleteChat]);
+    return chats.map((chat: Chat) => {
+      const displayName = chatNames[chat.id] || chat.name || 'New Chat';
+      
+      return (
+        <div
+          key={`chat-${chat.id}`}
+          className={`mx-2 p-2 rounded cursor-pointer relative group flex items-center justify-between ${
+            currentChat?.id === chat.id ? 'bg-blue-600' : 'hover:bg-gray-700'
+          }`}
+          onClick={() => handleChatClick(chat.id)}
+        >
+          <span className="text-white truncate flex-1" title={displayName}>
+            {displayName}
+          </span>
+          <DeleteChatButton chat={chat} onDelete={handleDeleteChat} />
+        </div>
+      );
+    });
+  }, [chats, currentChat?.id, chatNames, handleChatClick, isLoading, error, fetchChats, handleDeleteChat]);
 
   // Debug in useEffect
   useEffect(() => {
@@ -241,16 +355,20 @@ export function Sidebar({ onSidebarToggle }: SidebarProps) {
         </div>
 
         <Select
-          onValueChange={setDominationField}
-          value={dominationField || 'Normal Chat'}
-          defaultValue="Normal Chat"
+          value={selectedDomField}
+          onValueChange={handleDomFieldChange}
+          defaultValue={DOMINATION_FIELDS.NORMAL_CHAT}
         >
-          <SelectTrigger className="mb-4">
+          <SelectTrigger className="mb-4 bg-gray-700 border-gray-600 text-white">
             <SelectValue placeholder="Select Domination Field" />
           </SelectTrigger>
-          <SelectContent>
-            {dominationFieldsData.map((field) => (
-              <SelectItem key={field.value} value={field.value}>
+          <SelectContent className="bg-gray-700 border-gray-600">
+            {getDominationFieldOptions().map((field) => (
+              <SelectItem 
+                key={field.value} 
+                value={field.value}
+                className="text-white hover:bg-gray-600 focus:bg-gray-600 cursor-pointer"
+              >
                 {field.label}
               </SelectItem>
             ))}

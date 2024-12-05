@@ -31,7 +31,8 @@ export class EmbeddingService {
     inputs: string[],
     model: string
   ): Promise<EmbeddingResponse> {
-    const response = await fetch('/api/ollama', {
+    const ollamaUrl = process.env.NEXT_PUBLIC_OLLAMA_SERVER_URL || 'http://localhost:11434';
+    const response = await fetch(`${ollamaUrl}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -55,7 +56,8 @@ export class EmbeddingService {
     inputs: string[],
     model: string
   ): Promise<EmbeddingResponse> {
-    const response = await fetch('/api/embeddings', {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

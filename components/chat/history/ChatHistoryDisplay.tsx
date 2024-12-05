@@ -2,6 +2,21 @@ import React from 'react';
 import { ChatHistoryDisplayProps } from '../types';
 import { MessageBubble } from '../messages/MessageBubble';
 import { cn } from '@/lib/utils/styling';
+import { AppError } from '@/lib/utils/error';
+
+// Add helper function to format database errors
+const formatDatabaseError = (error: unknown) => {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const dbError = error as { code: string; message: string };
+    switch (dbError.code) {
+      case '2D000':
+        return 'Database transaction error: The operation could not be completed. Please try again.';
+      default:
+        return dbError.message;
+    }
+  }
+  return String(error);
+};
 
 export const ChatHistoryDisplay: React.FC<ChatHistoryDisplayProps> = ({
   messages,
@@ -62,7 +77,16 @@ export const ChatHistoryDisplay: React.FC<ChatHistoryDisplayProps> = ({
 
       {error && (
         <div className="rounded-lg bg-destructive/10 p-4 text-destructive">
-          {error}
+          <div className="font-medium">
+            {formatDatabaseError(error)}
+          </div>
+          {error && typeof error === 'object' && 'details' in error && (
+            <div className="mt-2 text-sm opacity-75 whitespace-pre-wrap">
+              {typeof (error as {details: unknown}).details === 'string' 
+                ? (error as {details: string}).details
+                : JSON.stringify((error as {details: unknown}).details, null, 2)}
+            </div>
+          )}
         </div>
       )}
     </div>

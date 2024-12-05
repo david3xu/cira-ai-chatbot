@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS chat_history (
     image_url TEXT,
     model TEXT,
     custom_prompt TEXT,
-    metadata JSONB
+    metadata JSONB,
+    status TEXT CHECK (status IN ('sending', 'success', 'failed')) DEFAULT 'sending'
 );
 
 -- Add GiST index for content fields
@@ -90,3 +91,7 @@ CREATE TRIGGER update_chat_history_updated_at
     BEFORE UPDATE ON chat_history
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Add index for status
+CREATE INDEX IF NOT EXISTS ix_chat_history_status 
+ON chat_history(status);

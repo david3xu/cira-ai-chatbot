@@ -16,7 +16,7 @@ export const getChatName = (chat: Chat): string => {
   if (chat.chatTopic) return chat.chatTopic;
   
   const firstUserMessage = chat.messages.find(m => m.userRole === 'user');
-  if (firstUserMessage) {
+  if (firstUserMessage && firstUserMessage.userContent) {
     const topic = firstUserMessage.userContent.slice(0, 30);
     return topic.length < firstUserMessage.userContent.length 
       ? `${topic}...` 

@@ -28,15 +28,50 @@ export const updateMessageInChat = (
 ): Chat => {
   return {
     ...chat,
-    messages: chat.messages.map(m => 
-      m.id === messageId || m.messagePairId === updates.messagePairId 
-        ? { ...m, ...updates } 
-        : m
-    ),
+    messages: chat.messages.map(m => {
+      if (m.id === messageId || 
+         (m.messagePairId === updates.messagePairId && m.isStreaming)) {
+        return { 
+          ...m, 
+          ...updates,
+          isStreaming: updates.isStreaming ?? m.isStreaming,
+          temporary: updates.temporary ?? m.temporary
+        };
+      }
+      return m;
+    }),
     updatedAt: new Date().toISOString()
   };
 };
 
-export const findMessageByPairId = (chat: Chat, messagePairId: string): ChatMessage | undefined => {
-  return chat.messages.find(m => m.messagePairId === messagePairId);
+export const findMessageByPairId = (
+  chat: Chat, 
+  messagePairId: string, 
+  options?: { 
+    isStreaming?: boolean 
+  }
+): ChatMessage | undefined => {
+  return chat.messages.find(m => 
+    m.messagePairId === messagePairId && 
+    (options?.isStreaming === undefined || m.isStreaming === options.isStreaming)
+  );
+};
+
+export const updateStreamingMessage = (
+  chat: Chat,
+  messagePairId: string,
+  content: string
+): Chat => {
+  return {
+    ...chat,
+    messages: chat.messages.map(m => 
+      m.messagePairId === messagePairId && m.isStreaming
+        ? {
+            ...m,
+            assistantContent: content,
+            updatedAt: new Date().toISOString()
+          }
+        : m
+    )
+  };
 }; 

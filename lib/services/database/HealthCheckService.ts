@@ -1,9 +1,9 @@
-import { supabaseAdmin } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 export class DatabaseHealthService {
   static async verifySetup(): Promise<boolean> {
-    const { data: isValid, error } = await supabaseAdmin.rpc('verify_database_setup');
-    
+    const { data: isValid, error } = await supabase.rpc('verify_database_setup');
+
     if (error) {
       console.error('Database verification failed:', error);
       return false;
@@ -13,7 +13,7 @@ export class DatabaseHealthService {
   }
 
   static async cleanupTransactions(): Promise<number> {
-    const { data: cleanedCount, error } = await supabaseAdmin.rpc('cleanup_stale_transactions');
+    const { data: cleanedCount, error } = await supabase.rpc('cleanup_stale_transactions');
     
     if (error) {
       console.error('Transaction cleanup failed:', error);

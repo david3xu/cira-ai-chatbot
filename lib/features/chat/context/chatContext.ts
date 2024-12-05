@@ -1,15 +1,7 @@
 import { createContext } from 'react';
-import { ChatState, Chat } from '@/lib/types/chat/chat';
-import { ChatAction } from '@/lib/types/chat/actions';
-import { CreateNewChatParams } from '@/lib/types/chat/chat';
-
-export const initialState: ChatState = {
-  chats: [],
-  currentChat: null,
-  messages: [],
-  isLoading: false,
-  error: null
-};
+import { ChatState, initialChatState } from '@/lib/types/chat/chat';
+import { ChatAction } from '@/lib/types/chat/chat';
+import { CreateNewChatParams, Chat } from '@/lib/types/chat/chat';
 
 interface ChatContextType {
   state: ChatState;
@@ -17,12 +9,20 @@ interface ChatContextType {
   handleChatCreation: (params: CreateNewChatParams) => Promise<Chat>;
   error: string | null;
   setError: (error: string | null) => void;
+  isLoading?: boolean;
+  setLoading: (loading: boolean) => void;
+  isProcessing: boolean;
+  setProcessing: (processing: boolean) => void;
 }
 
 export const ChatContext = createContext<ChatContextType>({
-  state: initialState,
+  state: initialChatState,
   dispatch: () => null,
   handleChatCreation: async () => { throw new Error('Not implemented') },
   error: null,
-  setError: () => {}
+  setError: () => null,
+  isLoading: false,
+  setLoading: () => null,
+  isProcessing: false,
+  setProcessing: () => null
 }); 

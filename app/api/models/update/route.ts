@@ -10,28 +10,38 @@ const modelUpdateSchema = z.object({
 });
 
 export const POST = withValidation(modelUpdateSchema, async (validatedData) => {
-  // Update chat model in database
-  const { error: chatError } = await supabase
-    .from('chats')
-    .update({ model: validatedData.model })
-    .eq('id', validatedData.chatId);
+  try {
+    // Only update the chat's model setting
+    const { data: updatedChat, error: chatError } = await supabase
+      .from('chats')
+      .update({ 
+        model: validatedData.model,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', validatedData.chatId)
+      .select('*')
+      .single();
 
-  if (chatError) {
-    throw new Error('Failed to update chat model');
+    if (chatError) throw chatError;
+
+    // Get existing messages to preserve their models
+    const { data: messages, error: messagesError } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('chat_id', validatedData.chatId);
+
+    if (messagesError) throw messagesError;
+
+    return createSuccessResponse({
+      message: 'Model updated successfully',
+      chat: {
+        ...updatedChat,
+        messages: messages || []
+      },
+      model: validatedData.model
+    });
+  } catch (error) {
+    console.error('Error updating model:', error);
+    throw error;
   }
-
-  // Update all unprocessed messages in chat_history to use new model
-  const { error: messagesError } = await supabase
-    .from('chat_history')
-    .update({ model: validatedData.model })
-    .eq('chat_id', validatedData.chatId);
-
-  if (messagesError) {
-    throw new Error('Failed to update message models');
-  }
-
-  return createSuccessResponse({
-    message: 'Model updated successfully',
-    model: validatedData.model
-  });
 }); 

@@ -3,7 +3,10 @@ import { persistentActions } from './persistentActions';
 import { sessionActions } from './sessionActions';
 
 export const storageActions = {
-  database: databaseActions,
+  database: {
+    ...databaseActions,
+  },
   persistent: persistentActions,
   session: sessionActions
 };
+

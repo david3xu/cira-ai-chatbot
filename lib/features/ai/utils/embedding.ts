@@ -7,7 +7,11 @@ interface SearchResult {
   score: number;
 }
 
-export async function getEmbedding(text: string): Promise<number[]> {
+export async function getEmbedding(text: string | null): Promise<number[]> {
+  if (!text) {
+    throw new Error('Text is required for embedding');
+  }
+
   const response = await retryWithBackoff(async () => {
     const result = await EmbeddingService.createEmbedding(
       text,
@@ -20,9 +24,13 @@ export async function getEmbedding(text: string): Promise<number[]> {
 }
 
 export async function performHybridSearch(
-  query: string,
+  query: string | null,
   dominationField: string
 ): Promise<SearchResult[]> {
+  if (!query) {
+    throw new Error('Query is required for hybrid search');
+  }
+
   try {
     const queryEmbedding = await getEmbedding(query);
     
@@ -32,7 +40,7 @@ export async function performHybridSearch(
     // 3. Return the most relevant results
     
     return [{
-      content: `Mock search result for query "${query}" in domain "${dominationField}"`,
+      content: `Search result for query "${query}" in domain "${dominationField}"`,
       score: 0.95
     }];
   } catch (error) {

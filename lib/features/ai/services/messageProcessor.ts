@@ -1,16 +1,21 @@
 import { FormattedMessage } from '@/lib/types/chat/formattedMessage';
-import { getSystemMessage } from '../prompts/systemMessages';
 
 export function processMessages(
   chatHistory: any[],
   prompt: string,
-  dominationField: string,
+  systemMessage: string,
   imageBase64?: string
 ): FormattedMessage[] {
+  console.log('🔄 [messageProcessor] Processing messages:', {
+    historyLength: chatHistory.length,
+    hasSystemMessage: !!systemMessage,
+    hasImage: !!imageBase64
+  });
+
   const messages: FormattedMessage[] = [
     {
       role: 'system',
-      content: getSystemMessage(dominationField)
+      content: systemMessage
     }
   ];
 
@@ -42,6 +47,10 @@ export function processMessages(
       type: 'image'
     });
   }
+
+  console.log('✅ [messageProcessor] Messages processed:', {
+    totalMessages: messages.length
+  });
 
   return messages;
 } 

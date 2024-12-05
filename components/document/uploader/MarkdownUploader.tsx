@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ChatService } from '@/lib/services/chat/ChatService';
 
 export function MarkdownUploader() {
-  const { handleSendMessage, isLoading, currentChat, model, dominationField } = useChat();
+  const { isLoading, currentChat, model, dominationField } = useChat();
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<string>('');

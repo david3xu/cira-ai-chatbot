@@ -22,7 +22,13 @@ export default function SharedLayout({ children }: SharedLayoutProps) {
     setMounted(true);
   }, []);
 
-  if (!mounted) {
+  useEffect(() => {
+    if (sidebarVisible !== undefined) {
+      localStorage.setItem('sidebarVisible', String(sidebarVisible));
+    }
+  }, [sidebarVisible]);
+
+  if (!mounted || !context) {
     return (
       <div className="min-h-screen bg-gray-900 flex">
         <div className="flex-1">
@@ -36,8 +42,10 @@ export default function SharedLayout({ children }: SharedLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-900 flex">
-      {context && <Sidebar onSidebarToggle={(visible) => setSidebarVisible(visible)} />}
-      <main className={`flex-1 ${sidebarVisible ? 'ml-[300px]' : 'ml-[80px]'} transition-all duration-300`}>
+      <Sidebar onSidebarToggle={(visible) => setSidebarVisible(visible)} />
+      <main 
+        className={`flex-1 ${sidebarVisible ? 'ml-[300px]' : 'ml-[80px]'} transition-all duration-300`}
+      >
         <div className="h-screen flex flex-col overflow-hidden">
           {children}
         </div>

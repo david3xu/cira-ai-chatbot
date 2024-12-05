@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
-import { supabaseAdmin } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 const chatIdSchema = z.string().uuid('Invalid chat ID format');
 
@@ -14,7 +14,7 @@ export async function GET(
     const validatedParams = await Promise.resolve(params);
     const chatId = await chatIdSchema.parseAsync(validatedParams.chatId);
 
-    const { data: messages, error } = await supabaseAdmin
+    const { data: messages, error } = await supabase
       .from('chat_history')
       .select('*')
       .eq('chat_id', chatId)
@@ -46,7 +46,7 @@ export async function DELETE(
     const chatId = await chatIdSchema.parseAsync(params.chatId);
 
     // Delete chat and its messages (cascade delete will handle chat_history)
-    const { error } = await supabaseAdmin
+    const { error } = await supabase
       .from('chats')
       .delete()
       .eq('id', chatId);

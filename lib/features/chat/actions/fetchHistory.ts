@@ -1,43 +1,33 @@
-import { supabaseAdmin } from '@/lib/supabase/client';
+import { storageActions } from './storage';
 import { ChatMessage } from '@/lib/types/chat/chat';
-import { MessageChunk } from '@/lib/types/chat/messageContent';
 
-export async function fetchChatHistory(chatId: string): Promise<ChatMessage[]> {
+export async function fetchChatHistory(chatId: string) {
   try {
-    // Fetch messages with their chunks
-    const { data: messages, error } = await supabaseAdmin
-      .from('chat_history')
-      .select(`
-        *,
-        message_content (
-          id,
-          content_type,
-          content_chunk,
-          chunk_order
-        )
-      `)
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
+    const { data, error } = await storageActions.database.fetchChatHistory(chatId);
+    if (error) throw error;
 
-    if (error) {
-      console.error('Error fetching chat history:', error);
-      throw new Error(`Failed to fetch chat history: ${error.message}`);
-    }
+    // Transform DB messages to frontend format
+    const messages = data?.map(msg => ({
+      id: msg.id,
+      chatId: msg.chat_id,
+      messagePairId: msg.message_pair_id,
+      userContent: msg.user_content,
+      assistantContent: msg.assistant_content,
+      userRole: msg.user_role as 'user' | 'system',
+      assistantRole: msg.assistant_role as 'assistant',
+      model: msg.model,
+      dominationField: msg.domination_field,
+      createdAt: msg.created_at,
+      updatedAt: msg.updated_at,
+      status: msg.status || 'success',
+      imageUrl: msg.image_url,
+      customPrompt: msg.custom_prompt,
+      metadata: msg.metadata
+    })) || [];
 
-    // Process messages and their chunks
-    return (messages || []).map(message => {
-      const processedMessage = { ...message } as any;
-      
-      if (message.message_content?.length > 0) {
-        processedMessage.content_chunks = message.message_content
-          .sort((a: MessageChunk, b: MessageChunk) => a.chunk_order - b.chunk_order);
-        delete processedMessage.message_content;
-      }
-      
-      return processedMessage as ChatMessage;
-    });
+    return { data: messages, error: null };
   } catch (error) {
-    console.error('Error in fetchChatHistory:', error);
-    throw error;
+    console.error('Error fetching chat history:', error);
+    return { data: null, error };
   }
 } 
