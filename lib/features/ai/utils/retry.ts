@@ -1,3 +1,18 @@
+/**
+ * Retry Utility
+ * 
+ * Implements retry logic with:
+ * - Exponential backoff
+ * - Configurable attempts
+ * - Delay management
+ * 
+ * Features:
+ * - Customizable retry options
+ * - Error handling
+ * - Delay capping
+ * - Attempt tracking
+ */
+
 interface RetryOptions {
   maxRetries?: number;
   initialDelay?: number;

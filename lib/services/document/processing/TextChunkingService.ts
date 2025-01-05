@@ -1,36 +1,18 @@
-interface ChunkOptions {
-  maxChunkSize?: number;
-  overlap?: number;
+interface ChunkingOptions {
+  maxChunkSize: number;
+  overlap: number;
 }
 
 export class TextChunkingService {
-  static chunkText(text: string, options: ChunkOptions = {}): string[] {
-    const {
-      maxChunkSize = 1000,
-      overlap = 200
-    } = options;
-
+  static chunkText(text: string, options: ChunkingOptions): string[] {
+    const { maxChunkSize, overlap } = options;
     const chunks: string[] = [];
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-    let currentChunk = '';
+    let startIndex = 0;
 
-    for (const sentence of sentences) {
-      if (currentChunk.length + sentence.length > maxChunkSize) {
-        chunks.push(currentChunk.trim());
-        currentChunk = sentence;
-        
-        if (overlap > 0) {
-          const words = currentChunk.split(' ');
-          const overlapWords = words.slice(-Math.floor(overlap / 10));
-          currentChunk = overlapWords.join(' ');
-        }
-      } else {
-        currentChunk += ' ' + sentence;
-      }
-    }
-
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
+    while (startIndex < text.length) {
+      const chunk = text.slice(startIndex, startIndex + maxChunkSize);
+      chunks.push(chunk);
+      startIndex += maxChunkSize - overlap;
     }
 
     return chunks;

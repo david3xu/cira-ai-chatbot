@@ -1,3 +1,17 @@
+/**
+ * Crypto Utilities
+ * 
+ * Provides cryptographic functions for:
+ * - Content hashing
+ * - SHA-256 implementation
+ * - Binary to hex conversion
+ * 
+ * Features:
+ * - Async hash generation
+ * - Web Crypto API usage
+ * - Consistent hash formatting
+ */
+
 export async function createHash(content: string): Promise<string> {
     const encoder = new TextEncoder();
     const data = encoder.encode(content);

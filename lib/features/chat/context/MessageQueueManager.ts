@@ -1,3 +1,20 @@
+/**
+ * Message Queue Manager
+ * 
+ * Handles message processing queue with:
+ * - Sequential message processing
+ * - Storage operations
+ * - Loading state management
+ * - Abort handling
+ * 
+ * Features:
+ * - Queue management
+ * - Concurrent processing prevention
+ * - Progress tracking
+ * - Error handling
+ * - Storage synchronization
+ */
+
 export class MessageQueueManager {
   private queue: Array<{
     message: string;

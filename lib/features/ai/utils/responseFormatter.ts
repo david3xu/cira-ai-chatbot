@@ -1,3 +1,18 @@
+/**
+ * Response Formatter
+ * 
+ * Formats AI responses with:
+ * - Markdown cleanup
+ * - Code block formatting
+ * - List standardization
+ * 
+ * Features:
+ * - Artifact removal
+ * - Consistent formatting
+ * - Code block handling
+ * - List normalization
+ */
+
 export function structureResponse(response: string): string {
   // Remove any potential system message artifacts
   response = response.replace(/^(Assistant|System|AI):\s*/i, '');

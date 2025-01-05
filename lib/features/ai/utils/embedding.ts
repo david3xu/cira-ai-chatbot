@@ -1,3 +1,18 @@
+/**
+ * Embedding Utilities
+ * 
+ * Handles text embedding operations:
+ * - Vector generation
+ * - Similarity search
+ * - Cosine similarity calculation
+ * 
+ * Features:
+ * - Hybrid search support
+ * - Error handling
+ * - Vector similarity calculations
+ * - Retry capabilities
+ */
+
 import { openai } from '../config/openai';
 import { retryWithBackoff } from './retry';
 import { EmbeddingService } from '@/lib/features/ai/services/embeddingService';

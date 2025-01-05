@@ -1,3 +1,19 @@
+/**
+ * OpenAI Configuration
+ * 
+ * Sets up OpenAI client with:
+ * - API configuration
+ * - Default parameters
+ * - Timeout settings
+ * - Retry policies
+ * 
+ * Features:
+ * - Environment-based configuration
+ * - Default completion settings
+ * - Error handling
+ * - Timeout management
+ */
+
 import OpenAI from 'openai';
 import { AI_CONSTANTS } from './constants';
 

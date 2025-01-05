@@ -1,7 +1,25 @@
+'use client';
+
+/**
+ * Chat Context
+ * 
+ * Provides global chat state management with:
+ * - State and dispatch functions
+ * - Chat creation handling
+ * - Error management
+ * - Loading states
+ * 
+ * Features:
+ * - Type-safe context
+ * - Default values
+ * - Processing states
+ * - Error handling
+ */
+
 import { createContext } from 'react';
-import { ChatState, initialChatState } from '@/lib/types/chat/chat';
-import { ChatAction } from '@/lib/types/chat/chat';
-import { CreateNewChatParams, Chat } from '@/lib/types/chat/chat';
+import { ChatState, initialChatState } from '@/lib/types';
+import { ChatAction } from '@/lib/types';
+import { CreateNewChatParams, Chat } from '@/lib/types';
 
 interface ChatContextType {
   state: ChatState;

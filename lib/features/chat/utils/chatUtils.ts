@@ -1,4 +1,18 @@
-import { Chat, ChatMessage } from '@/lib/types/chat/chat';
+import { Chat, ChatMessage } from '@/lib/types';
+
+/**
+ * Chat Utility Functions
+ * 
+ * Functions:
+ * - isValidChat: Validates chat object structure
+ * - getChatName: Generates display name for chat
+ * 
+ * Features:
+ * - Type validation
+ * - Smart name generation
+ * - Fallback handling
+ * - Content truncation
+ */
 
 export const isValidChat = (chat: Chat): boolean => {
   return (
@@ -7,7 +21,7 @@ export const isValidChat = (chat: Chat): boolean => {
     typeof chat.createdAt === 'string' &&
     typeof chat.updatedAt === 'string' &&
     typeof chat.model === 'string' &&
-    typeof chat.dominationField === 'string'
+    typeof chat.domination_field === 'string'
   );
 };
   
@@ -15,10 +29,10 @@ export const getChatName = (chat: Chat): string => {
   if (chat.name) return chat.name;
   if (chat.chatTopic) return chat.chatTopic;
   
-  const firstUserMessage = chat.messages.find(m => m.userRole === 'user');
-  if (firstUserMessage && firstUserMessage.userContent) {
-    const topic = firstUserMessage.userContent.slice(0, 30);
-    return topic.length < firstUserMessage.userContent.length 
+  const firstUserMessage = chat.messages.find(m => m.user_role === 'user');
+  if (firstUserMessage && firstUserMessage.user_content) {
+    const topic = firstUserMessage.user_content.slice(0, 30);
+    return topic.length < firstUserMessage.user_content.length 
       ? `${topic}...` 
       : topic;
   }

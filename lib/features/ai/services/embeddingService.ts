@@ -1,3 +1,20 @@
+/**
+ * Embedding Service
+ * 
+ * Manages text embeddings with:
+ * - Multiple model support
+ * - Provider selection
+ * - Error handling
+ * - Usage tracking
+ * 
+ * Features:
+ * - Ollama integration
+ * - OpenAI compatibility
+ * - Batch processing
+ * - Error recovery
+ * - Usage monitoring
+ */
+
 export interface EmbeddingResponse {
   embeddings: number[][];
   model: string;

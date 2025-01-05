@@ -1,3 +1,19 @@
+/**
+ * File Handling Utilities
+ * 
+ * Functions:
+ * - isValidFileType: Checks file type against allowed types
+ * - isValidFileSize: Validates file size
+ * - getFileExtension: Extracts file extension
+ * - readFileAsText: Converts file to text
+ * 
+ * Features:
+ * - Size limits
+ * - Type validation
+ * - Extension parsing
+ * - Async file reading
+ */
+
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 export const isValidFileType = (file: File): boolean => {

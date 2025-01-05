@@ -1,4 +1,21 @@
-import { Chat, ChatMessage } from '@/lib/types/chat/chat';
+import { Chat, ChatMessage } from '@/lib/types';
+
+/**
+ * Chat State Utilities
+ * 
+ * Functions:
+ * - addMessageToChat: Adds or updates a message in a chat's message list
+ * - removeMessageFromChat: Removes a message from a chat by ID
+ * - updateMessageInChat: Updates specific message properties in a chat
+ * - findMessageByPairId: Locates a message using its pair ID and streaming status
+ * - updateStreamingMessage: Updates content of a streaming message
+ * 
+ * Features:
+ * - Immutable state updates
+ * - Message pair handling
+ * - Streaming message support
+ * - Timestamp management
+ */
 
 export const addMessageToChat = (chat: Chat, message: ChatMessage): Chat => {
   const existingMessage = chat.messages.find(m => m.messagePairId === message.messagePairId);

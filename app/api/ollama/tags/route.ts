@@ -1,15 +1,18 @@
-import { NextResponse } from 'next/server';
-import { OllamaService } from '@/lib/features/ai/services/ollamaService';
+// import { NextRequest } from 'next/server';
+// import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
+// import { OllamaModel } from '@/types/ollama';
 
-export async function GET() {
-  try {
-    const models = await OllamaService.getModels(true);
-    return NextResponse.json({ models });
-  } catch (error) {
-    console.error('Error in /api/ollama/tags:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch models' }, 
-      { status: 500 }
-    );
-  }
-} 
+// export async function GET() {
+//   try {
+//     const response = await fetch('http://localhost:11434/api/tags');
+//     if (!response.ok) throw new Error('Failed to fetch models');
+//     const data = await response.json();
+//     console.log('API Response:', data);
+//     return createSuccessResponse({ models: data.models as OllamaModel[] });
+//   } catch (error) {
+//     console.error('API Error:', error);
+//     return createErrorResponse(
+//       error instanceof Error ? error.message : 'Failed to fetch models'
+//     );
+//   }
+// } 

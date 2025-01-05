@@ -1,1 +1,0 @@
-export { answerQuestion } from './answerQuestion'; 

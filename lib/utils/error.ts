@@ -1,6 +1,22 @@
 import { SetStateAction } from 'react';
 import { AI_CONSTANTS } from '@/lib/features/ai/config/constants';
 
+/**
+ * Error Handling Utilities
+ * 
+ * Provides error management with:
+ * - Custom error types
+ * - Error handling functions
+ * - Context tracking
+ * - Model errors
+ * 
+ * Features:
+ * - Error classes
+ * - Handler creation
+ * - Context support
+ * - Stream errors
+ */
+
 export type ErrorHandlerFunction = (value: SetStateAction<string | null>) => void;
 
 interface ErrorResponse {
@@ -79,7 +95,12 @@ export class ErrorHandler {
 }
 
 // Export commonly used functions directly
-export const handleError = ErrorHandler.handle;
+export const handleError = (error: unknown, setError?: ErrorHandlerFunction) => {
+  if (setError) {
+    return ErrorHandler.handle(error, setError);
+  }
+  return new AppError(error instanceof Error ? error.message : 'An unexpected error occurred');
+};
 export const createErrorHandler = ErrorHandler.createHandler;
 export const handleStreamError = ErrorHandler.handleStreamError;
 export const handleChatError = ErrorHandler.handleChatError;

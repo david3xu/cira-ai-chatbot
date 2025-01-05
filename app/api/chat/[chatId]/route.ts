@@ -1,70 +1,133 @@
-import { NextRequest } from 'next/server';
-import { z } from 'zod';
-import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
-import { supabase } from '@/lib/supabase/client';
+import { answerQuestion } from '@/lib/features/ai/actions/answerQuestion';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
+import { ChatError, ErrorCodes } from '@/lib/types/errors';
 
-const chatIdSchema = z.string().uuid('Invalid chat ID format');
+export const runtime = 'edge';
 
-export async function GET(
-  req: NextRequest,
+const DEFAULT_USER_ID = process.env.NEXT_PUBLIC_DEFAULT_USER_ID;
+
+export async function POST(
+  req: Request,
   { params }: { params: { chatId: string } }
 ) {
   try {
-    // Await params validation
-    const validatedParams = await Promise.resolve(params);
-    const chatId = await chatIdSchema.parseAsync(validatedParams.chatId);
+    const supabase = createRouteHandlerClient({ cookies });
+    const { content, options } = await req.json();
+    const messagePairId = options.messagePairId || crypto.randomUUID();
 
-    const { data: messages, error } = await supabase
-      .from('chat_history')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
+    // Use the model from options, fallback to default if not provided
+    const selectedModel = options.model;
+    console.log('Using model:', selectedModel);
+
+    // Start transaction
+    const { data: messages, error } = await supabase.rpc('create_message_pair', {
+      p_message_pair_id: messagePairId,
+      p_content: content,
+      p_model: selectedModel,
+      p_domination_field: options.dominationField,
+      p_chat_id: params.chatId
+    });
 
     if (error) {
-      console.error('Database query error:', error);
-      return createErrorResponse(`Failed to fetch chat history: ${error.message}`, 500);
+      throw new ChatError(
+        'Failed to save message pair',
+        ErrorCodes.DB_ERROR,
+        { messagePairId }
+      );
     }
 
-    return createSuccessResponse({ messages });
+    let streamingContent = '';
+    
+    // Use answerQuestion with streaming
+    const response = await answerQuestion({
+      messages: messages.map((msg: {
+        id: string;
+        chat_id?: string;
+        message_pair_id: string;
+        created_at?: string;
+        updated_at?: string;
+        user_content: string;
+        user_role: string;
+        assistant_content: string;
+        assistant_role: string;
+        domination_field: string;
+        model?: string;
+        status: string;
+      }) => ({
+        id: msg.id,
+        chatId: msg.chat_id || '',
+        messagePairId: msg.message_pair_id,
+        createdAt: msg.created_at || new Date().toISOString(),
+        updatedAt: msg.updated_at || new Date().toISOString(),
+        user_content: msg.user_content,
+        user_role: msg.user_role as 'user' | 'system',
+        assistant_content: msg.assistant_content,
+        assistant_role: msg.assistant_role as 'assistant' | 'system',
+        domination_field: msg.domination_field,
+        model: msg.model || '',
+        status: msg.status as 'sending' | 'success' | 'failed'
+      })),
+      onToken: async (token) => {
+        streamingContent += token;
+      },
+      chatId: params.chatId,
+      model: options.model,
+      dominationField: options.dominationField,
+      customPrompt: options.customPrompt
+    });
+
+    return NextResponse.json({ content: streamingContent });
+
   } catch (error) {
-    console.error('Error fetching chat messages:', error);
-    if (error instanceof z.ZodError) {
-      return createErrorResponse(`Validation error: ${error.message}`, 400);
+    if (error instanceof ChatError) {
+      throw error;
     }
-    return createErrorResponse(
-      error instanceof Error ? error.message : 'Failed to fetch chat messages',
-      500
+    throw new ChatError(
+      'Stream processing failed',
+      ErrorCodes.STREAM_ERROR,
+      { chatId: params.chatId }
     );
   }
 }
 
-export async function DELETE(
-  req: NextRequest,
+export async function GET(
+  request: Request,
   { params }: { params: { chatId: string } }
 ) {
   try {
-    const chatId = await chatIdSchema.parseAsync(params.chatId);
+    const supabase = createRouteHandlerClient({ cookies });
+    let userId = DEFAULT_USER_ID;
 
-    // Delete chat and its messages (cascade delete will handle chat_history)
-    const { error } = await supabase
+    const { data: chat, error } = await supabase
       .from('chats')
-      .delete()
-      .eq('id', chatId);
+      .select('*')
+      .eq('id', params.chatId)
+      .eq('user_id', userId)
+      .single();
 
     if (error) {
-      console.error('Database deletion error:', error);
-      return createErrorResponse(`Failed to delete chat: ${error.message}`, 500);
+      console.error('Database error:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch chat' },
+        { status: 500 }
+      );
     }
 
-    return createSuccessResponse({ message: 'Chat deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting chat:', error);
-    if (error instanceof z.ZodError) {
-      return createErrorResponse(`Validation error: ${error.message}`, 400);
+    if (!chat) {
+      return NextResponse.json(
+        { error: 'Chat not found' },
+        { status: 404 }
+      );
     }
-    return createErrorResponse(
-      error instanceof Error ? error.message : 'Failed to delete chat',
-      500
+
+    return NextResponse.json({ data: chat });
+  } catch (error) {
+    console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
     );
   }
 } 

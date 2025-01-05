@@ -1,3 +1,19 @@
+/**
+ * System Messages Generator
+ * 
+ * Manages AI system prompts with:
+ * - Domain-specific prompting
+ * - Context integration
+ * - Custom prompt support
+ * 
+ * Features:
+ * - Multiple domain templates
+ * - Dynamic prompt generation
+ * - Conversation history integration
+ * - Custom instruction support
+ * - Markdown formatting
+ */
+
 import { DOMINATION_FIELDS, DominationField } from '../config/constants';
 import { codeBlock } from 'common-tags';
 

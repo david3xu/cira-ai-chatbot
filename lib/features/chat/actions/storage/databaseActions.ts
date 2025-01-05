@@ -1,326 +1,306 @@
-import { supabase } from '@/lib/supabase/client';
-import { Chat, ChatMessage, ChatUpdate } from '@/lib/types/chat/chat';
-import { toApiCase } from '@/types/api/transformers';
-import { PostgrestError } from '@supabase/supabase-js';
+// /**
+//  * Database Actions
+//  * 
+//  * Manages database operations for:
+//  * - Chat persistence
+//  * - Message storage
+//  * - Transaction handling
+//  * - Data fetching
+//  * 
+//  * Features:
+//  * - Transaction support
+//  * - Error handling
+//  * - Data transformation
+//  * - CRUD operations
+//  * - Supabase integration
+//  */
 
-interface TransactionError extends Error {
-  data?: {
-    transaction_id?: string;
-  };
-}
+// import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+// import { Database } from '@/supabase/types/database.types';
+// import { cookies } from 'next/headers';
 
-export const databaseActions = {
-  // Chat operations
-  saveChat: async (chat: Chat) => {
-    if (!chat.id) {
-      throw new Error('chat_id is required');
-    }
+// interface MessageData {
+//   chatId: string;
+//   content: string;
+//   role: 'user' | 'assistant';
+//   messagePairId?: string;
+//   model?: string;
+//   status?: 'sending' | 'success' | 'error';
+//   dominationField?: string;
+//   customPrompt?: string;
+// }
 
-    try {
-      // Start transaction using direct table operations
-      const { data, error } = await supabase
-        .from('stale_transactions')
-        .insert([{  // Using array syntax for insert
-          chat_id: chat.id,
-          status: 'started'
-        }])
-        .select('transaction_id')
-        .single();
-      
-      if (error) throw error;
-      
-      const { error: upsertError } = await supabase
-        .from('chats')
-        .upsert({
-          id: chat.id,
-          name: chat.name || 'New Chat',
-          model: chat.model || 'null',
-          custom_prompt: chat.customPrompt,
-          domination_field: chat.dominationField || 'Normal Chat',
-          metadata: chat.metadata || {},
-          updated_at: new Date().toISOString()
-        });
+// interface ModelSettings {
+//   model: string;
+//   temperature?: number;
+//   max_tokens?: number;
+// }
 
-      if (upsertError) throw upsertError;
+// interface FileMetadata {
+//   chatId: string;
+//   userId: string;
+//   name: string;
+//   type: string;
+//   size: number;
+//   path: string;
+// }
 
-      // Commit transaction using direct table operations
-      const { error: commitError } = await supabase
-        .from('stale_transactions')
-        .update({ 
-          status: 'committed',
-          cleaned_at: new Date().toISOString()
-        })
-        .eq('transaction_id', data.transaction_id)
-        .eq('status', 'started');
+// interface DocumentData {
+//   content: string;
+//   dominationField: string;
+//   embedding: number[];
+// }
 
-      if (commitError) throw commitError;
-    } catch (error) {
-      // Rollback on error using direct table operations
-      const txError = error as TransactionError;
-      if (txError.data?.transaction_id) {
-        await supabase
-          .from('stale_transactions')
-          .update({ 
-            status: 'rolled_back',
-            cleaned_at: new Date().toISOString()
-          })
-          .eq('transaction_id', txError.data.transaction_id)
-          .eq('status', 'started');
-      }
-      throw error;
-    }
-  },
-  
-  saveChats: async (chats: Chat[]) => {
-    const transformedChats = chats.map(chat => ({
-      id: chat.id,
-      name: chat.name || '',
-      model: chat.model || 'null',
-      domination_field: chat.dominationField || 'Normal Chat',
-      custom_prompt: chat.customPrompt || null,
-      metadata: chat.metadata || {},
-      updated_at: chat.updatedAt || new Date().toISOString()
-    }));
+// interface SearchParams {
+//   query: string;
+//   embedding: number[];
+//   matchCount?: number;
+//   dominationField?: string;
+// }
 
-    const { error } = await supabase
-      .from('chats')
-      .upsert(transformedChats, { 
-        onConflict: 'id',
-        ignoreDuplicates: false 
-      });
+// export const databaseActions = {
+//   // Chat Operations
+//   createChat: async (userId: string, data: { model: string, name?: string }) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data: chat, error } = await supabase
+//       .from('chats')
+//       .insert({
+//         user_id: userId,
+//         model: data.model,
+//         name: data.name || 'New Chat'
+//       })
+//       .select()
+//       .single();
 
-    if (error) throw error;
-    return { success: true };
-  },
-  
-  // Message operations
-  saveMessage: async (message: ChatMessage, transactionId?: string) => {
-    try {
-      // If transaction ID provided, verify it exists and is active
-      if (transactionId) {
-        const { data: txData, error: txError } = await supabase
-          .from('stale_transactions')
-          .select()
-          .eq('transaction_id', transactionId)
-          .eq('status', 'started')
-          .single();
+//     if (error) throw error;
+//     return chat;
+//   },
 
-        if (txError || !txData) {
-          throw new Error('Invalid or expired transaction');
-        }
-      }
+//   getChatHistory: async (chatId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data, error } = await supabase
+//       .from('chat_history')
+//       .select('*')
+//       .eq('chat_id', chatId)
+//       .order('created_at', { ascending: true });
 
-      const { error } = await supabase
-        .from('chat_history')
-        .insert({
-          chat_id: message.chatId,
-          message_pair_id: message.messagePairId,
-          user_content: message.userContent || '',
-          assistant_content: message.assistantContent || '',
-          user_role: message.userRole || 'user',
-          assistant_role: message.assistantRole || 'assistant',
-          domination_field: message.dominationField,
-          model: message.model,
-          custom_prompt: message.customPrompt,
-          metadata: message.metadata || {}
-        });
-      
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error saving message:', error);
-      throw error;
-    }
-  },
-  
-  // Transaction operations
-  beginTransaction: async (chatId: string) => {
-    if (!chatId) {
-      throw new Error('chat_id is required');
-    }
+//     if (error) throw error;
+//     return data;
+//   },
 
-    const { data, error } = await supabase
-      .from('stale_transactions')
-      .insert([{  // Note: Using array syntax for insert
-        chat_id: chatId,
-        status: 'started'
-      }])
-      .select('transaction_id')
-      .single();
+//   // Message Operations
+//   saveMessage: async (message: MessageData) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const messageData = {
+//       chat_id: message.chatId,
+//       message_pair_id: message.messagePairId || crypto.randomUUID(),
+//       [`${message.role}_content`]: message.content || '',
+//       [`${message.role}_role`]: message.role,
+//       model: message.model || null,
+//       status: message.status || 'sending',
+//       domination_field: message.dominationField || 'general',
+//       custom_prompt: message.customPrompt || null
+//     };
+
+//     const { error } = await supabase
+//       .from('chat_history')
+//       .insert(messageData);
+
+//     if (error) throw error;
+//   },
+
+//   updateMessageStatus: async (messagePairId: string, updates: {
+//     assistantContent?: string;
+//     status: 'success' | 'error';
+//   }) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('chat_history')
+//       .update({
+//         assistant_content: updates.assistantContent,
+//         status: updates.status
+//       })
+//       .eq('message_pair_id', messagePairId);
+
+//     if (error) throw error;
+//   },
+
+//   deleteMessage: async (messageId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('chat_history')
+//       .delete()
+//       .eq('id', messageId);
+
+//     if (error) throw error;
+//   },
+
+//   // Model Settings
+//   getModelSettings: async (userId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data, error } = await supabase
+//       .from('model_settings')
+//       .select('*')
+//       .eq('user_id', userId)
+//       .single();
+
+//     if (error) throw error;
+//     return data;
+//   },
+
+//   updateModelSettings: async (userId: string, settings: ModelSettings) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('model_settings')
+//       .upsert({
+//         user_id: userId,
+//         ...settings
+//       });
+
+//     if (error) throw error;
+//   },
+
+//   // File Operations
+//   uploadFile: async (userId: string, chatId: string, file: File) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
     
-    if (error) {
-      console.error('Transaction error:', error);
-      throw new Error(`Failed to begin transaction: ${error.message}`);
-    }
+//     // Use transaction to ensure both storage and database operations succeed
+//     const { data: storageData, error: storageError } = await supabase
+//       .storage
+//       .from('chat-files')
+//       .upload(`${userId}/${chatId}/${file.name}`, file);
+
+//     if (storageError) throw storageError;
+
+//     const fileMetadata: FileMetadata = {
+//       chatId,
+//       userId,
+//       name: file.name,
+//       type: file.type,
+//       size: file.size,
+//       path: storageData.path
+//     };
+
+//     const { error: dbError } = await supabase
+//       .from('files')
+//       .insert(fileMetadata);
+
+//     if (dbError) {
+//       // Rollback storage upload if database insert fails
+//       await supabase.storage.from('chat-files').remove([storageData.path]);
+//       throw dbError;
+//     }
+
+//     return storageData;
+//   },
+
+//   getFile: async (fileId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data: file, error: fetchError } = await supabase
+//       .from('files')
+//       .select('*')
+//       .eq('id', fileId)
+//       .single();
+
+//     if (fetchError) throw fetchError;
+
+//     const { data, error: urlError } = await supabase
+//       .storage
+//       .from('chat-files')
+//       .createSignedUrl(file.path, 60);
+//     if (!data) throw new Error('Failed to get signed URL');
+//     const { signedUrl } = data;
+
+//     return { ...file, url: signedUrl };
+//   },
+
+//   deleteFile: async (fileId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
     
-    return { data };
-  },
+//     // Use transaction to ensure both storage and database operations succeed
+//     const { data: file, error: fetchError } = await supabase
+//       .from('files')
+//       .select('path')
+//       .eq('id', fileId)
+//       .single();
 
-  commitTransaction: async (transactionId: string) => {
-    if (!transactionId) {
-      throw new Error('transaction_id is required');
-    }
+//     if (fetchError) throw fetchError;
 
-    const { data, error } = await supabase
-      .from('stale_transactions')
-      .update({ 
-        status: 'committed',
-        cleaned_at: new Date().toISOString()
-      })
-      .eq('transaction_id', transactionId)
-      .eq('status', 'started')
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Commit error:', error);
-      throw new Error(`Failed to commit transaction: ${error.message}`);
-    }
-    
-    return data;
-  },
+//     const { error: storageError } = await supabase
+//       .storage
+//       .from('chat-files')
+//       .remove([file.path]);
 
-  rollbackTransaction: async (transactionId: string) => {
-    if (!transactionId) {
-      throw new Error('transaction_id is required');
-    }
+//     if (storageError) throw storageError;
 
-    const { data, error } = await supabase
-      .from('stale_transactions')
-      .update({ 
-        status: 'rolled_back',
-        cleaned_at: new Date().toISOString()
-      })
-      .eq('transaction_id', transactionId)
-      .eq('status', 'started')
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Rollback error:', error);
-      throw new Error(`Failed to rollback transaction: ${error.message}`);
-    }
-    
-    return data;
-  },
-  
-  // Fetch operations
-  fetchChats: async () => {
-    try {
-      const { data, error } = await supabase
-        .from('chats')
-        .select(`
-          id,
-          model,
-          domination_field,
-          name,
-          custom_prompt,
-          metadata,
-          created_at,
-          updated_at,
-          user_id
-        `)
-        .order('created_at', { ascending: false });
+//     const { error: dbError } = await supabase
+//       .from('files')
+//       .delete()
+//       .eq('id', fileId);
 
-      if (error) throw error;
-      
-      // Transform data to match frontend types
-      const transformedData = data?.map(chat => ({
-        id: chat.id,
-        userId: chat.user_id || '',
-        name: chat.name || '',
-        model: chat.model || 'null',
-        dominationField: chat.domination_field || 'Normal Chat',
-        customPrompt: chat.custom_prompt || null,
-        metadata: chat.metadata || {},
-        createdAt: chat.created_at,
-        updatedAt: chat.updated_at,
-        messages: []
-      }));
+//     if (dbError) throw dbError;
+//   },
 
-      return { data: transformedData, error: null };
-    } catch (error) {
-      console.error('Error fetching chats:', error);
-      return { data: null, error };
-    }
-  },
+//   // Document Operations
+//   saveDocument: async (document: DocumentData) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('documents')
+//       .insert({
+//         content: document.content,
+//         domination_field: document.dominationField,
+//         embedding: JSON.stringify(document.embedding)
+//       });
 
-  fetchChatHistory: async (chatId: string) => {
-    return await supabase
-      .from('chat_history')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
-  },
-  
-  // Delete operations
-  deleteChat: async (chatId: string) => {
-    const { error } = await supabase
-      .from('chats')
-      .delete()
-      .match({ id: chatId });
-    if (error) throw error;
-  },
+//     if (error) throw error;
+//   },
 
-  // Add this new utility method
-  handleTransaction: async (chatId: string, operation: () => Promise<void>) => {
-    let transactionStarted = false;
-    try {
-      await supabase.rpc('begin_chat_transaction', { chat_id: chatId });
-      transactionStarted = true;
-      await operation();
-      await supabase.rpc('commit_chat_transaction', { chat_id: chatId });
-    } catch (error) {
-      if (transactionStarted) {
-        try {
-          await supabase.rpc('rollback_chat_transaction', { chat_id: chatId });
-        } catch (rollbackError) {
-          console.error('Rollback failed:', rollbackError);
-        }
-      }
-      throw new Error(error instanceof Error ? error.message : 'Transaction failed');
-    }
-  },
+//   searchDocuments: async (params: SearchParams) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data, error } = await supabase.rpc('hybrid_search', {
+//       query_text: params.query,
+//       query_embedding: JSON.stringify(params.embedding),
+//       match_count: params.matchCount || 5,
+//       in_domination_field: params.dominationField || 'general'
+//     });
 
-  updateChat: async (chatId: string, updates: ChatUpdate) => {
-    try {
-      const { error } = await supabase
-        .from('chats')
-        .update({
-          name: updates.name,
-          updated_at: new Date().toISOString(),
-          // Only include other fields if they exist in updates
-          ...(updates.model && { model: updates.model }),
-          ...(updates.dominationField && { domination_field: updates.dominationField }),
-          ...(updates.customPrompt && { custom_prompt: updates.customPrompt }),
-          ...(updates.metadata && { metadata: updates.metadata })
-        })
-        .eq('id', chatId);
+//     if (error) throw error;
+//     return data;
+//   },
 
-      if (error) throw error;
-      
-      // Fetch the updated chat
-      const { data: chat, error: fetchError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chatId)
-        .single();
-        
-      if (fetchError) throw fetchError;
-      
-      return { data: chat, error: null };
-    } catch (error) {
-      console.error('Error updating chat:', error);
-      return { data: null, error };
-    }
-  },
+//   getDocument: async (documentId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { data, error } = await supabase
+//       .from('documents')
+//       .select('*')
+//       .eq('id', documentId)
+//       .single();
 
-  updateChatHistoryPrompt: async (chatId: string, customPrompt: string) => {
-    const { error } = await supabase
-      .from('chat_history')
-      .update({ custom_prompt: customPrompt })
-      .eq('chat_id', chatId);
+//     if (error) throw error;
+//     return data;
+//   },
 
-    if (error) throw error;
-    return { success: true };
-  }
-};
+//   updateDocument: async (documentId: string, updates: Partial<DocumentData>) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('documents')
+//       .update({
+//         content: updates.content,
+//         domination_field: updates.dominationField,
+//         embedding: updates.embedding ? JSON.stringify(updates.embedding) : undefined
+//       })
+//       .eq('id', documentId);
+
+//     if (error) throw error;
+//   },
+
+//   deleteDocument: async (documentId: string) => {
+//     const supabase = createRouteHandlerClient<Database>({ cookies });
+//     const { error } = await supabase
+//       .from('documents')
+//       .delete()
+//       .eq('id', documentId);
+
+//     if (error) throw error;
+//   }
+// };

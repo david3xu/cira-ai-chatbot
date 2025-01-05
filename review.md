@@ -1,170 +1,3 @@
-The project includes:
-  Real-time chat interface
-  File upload support
-  Multiple AI model support
-  Document processing
-  Chat history management
-  Custom prompt templates
-
-Project Structure Overview:
-
-1. Core Application Structure (/app)
-- Next.js App Router with API routes
-- Global styles
-- Root layout
-
-2. React Components (/components)
-/* Component Architecture Notes */
-
-/providers
-  /* Manages global state and context distribution */
-  - ChatProvider: Handles chat state and real-time updates
-  - DocumentProvider: Manages document state and processing
-  - ThemeProvider: Controls UI theme and preferences
-
-/ui
-  /* Reusable atomic components following design system */
-  /* All components should be stateless and highly reusable */
-  /* Forms foundation for consistent UI across the application */
-
-/chat
-  /conversation
-    /* Main chat interface container */
-    - ChatContainer: Orchestrates chat layout and state
-    - ChatHeader: Navigation and chat meta information
-    - ChatBody: Main message display area with scroll management
-
-  /messages
-    /* Message display and interaction */
-    - MessageList: Virtualized list for performance
-    - MessageItem: Individual message rendering
-    - MessageActions: Message-specific interactions
-
-  /input
-    /* User input handling */
-    - ChatInput: Rich text input with markdown support
-    - InputActions: Message controls and attachments
-    - AttachmentButton: File upload integration
-
-  /sidebar
-    /* Chat navigation and history */
-    - ChatHistory: Conversation list and management
-    - ChatFilter: Search and filtering capabilities
-    - HistoryItem: Individual conversation preview
-
-/document
-  /* Document handling components */
-  /uploader
-    - FileUpload: Handles file selection and upload
-    - UploadProgress: Visual feedback for upload status
-    - FileList: Manages multiple file uploads
-
-  /viewer
-    - DocumentViewer: Document rendering and navigation
-    - DocumentToolbar: Document control actions
-    - PageNavigation: Multi-page document navigation
-
-3. Core Business Logic (/lib)
-/* Business Logic Architecture Notes */
-
-/features
-  /chat
-    /* Core chat functionality */
-    actions/
-      - sendMessage: Handles message transmission and retry
-      - editMessage: Message modification with history
-      - deleteMessage: Safe message removal with confirmation
-
-    hooks/
-      - useChat: Main chat interaction hook
-      - useChatHistory: History management and pagination
-      - useChatInput: Input state and validation
-
-    utils/
-      - messageFormatter: Message parsing and formatting
-      - chatStorage: Local chat data management
-
-  /ai
-    /* AI model integration */
-    models/
-      - openai: OpenAI API integration
-      - ollama: Local model integration
-      - anthropic: Anthropic API integration
-
-    actions/
-      - modelSelection: Model switching and configuration
-      - streamResponse: Streaming response handling
-      - contextManagement: Conversation context handling
-
-    utils/
-      - tokenCounter: Token usage tracking
-      - promptFormatter: Template processing
-
-  /document
-    /* Document processing */
-    actions/
-      - uploadDocument: File upload and validation
-      - processDocument: Document parsing and extraction
-      - extractContent: Content extraction and processing
-
-    hooks/
-      - useDocument: Document state management
-      - useDocumentUpload: Upload progress tracking
-      - useDocumentViewer: Document viewing controls
-
-/core
-  /* Core services */
-  /api
-    - apiClient: Centralized API communication
-    - errorHandling: Global error management
-
-  /storage
-    - localStorage: Client-side storage
-    - supabaseStorage: Cloud storage integration
-
-  /auth
-    - authentication: User authentication
-    - authorization: Access control
-
-  /websocket
-    - socketClient: Real-time communication
-    - realTimeHandlers: Socket event handling
-
-Key Integration Points:
-1. Components use hooks from /features for data management
-2. Core services provide infrastructure for features
-3. Features implement business logic independent of UI
-4. Providers bridge components and features
-
-4. TypeScript Types (/types)
-- Global type definitions
-- API types
-- Chat types
-- Document types
-
-5. Backend Integration
-- Supabase integration
-  - Database migrations
-  - Serverless functions
-  - Configuration
-
-6. Key Technologies:
-- Next.js
-- React 18
-- Supabase
-- Tailwind CSS
-- Radix UI components
-- Markdown processing
-- OpenAI integration
-
-7. Architecture Patterns:
-- Feature-first architecture
-- Clean separation of concerns
-- Context-based state management
-- Service-based backend integration
-- Type-safe development
-- API-first design
-
 8. API Structure (/app/api)
 /* API Architecture Notes */
 
@@ -211,65 +44,6 @@ Key Integration Points:
   - POST /auth/logout: User logout
   - POST /auth/refresh: Refresh token
   - GET /auth/session: Get session info
-
-Integration Notes:
-
-1. API Route Handlers:
-   /* Each route should have dedicated handler in /app/api */
-   - Consistent error handling
-   - Request validation
-   - Response type safety
-   - Rate limiting implementation
-
-2. Middleware Integration:
-   /* Applied consistently across routes */
-   - Authentication checking
-   - Request logging
-   - Performance monitoring
-   - CORS handling
-
-3. API Security:
-   /* Security measures for all endpoints */
-   - Rate limiting
-   - Input validation
-   - Authentication checks
-   - CSRF protection
-
-4. Response Patterns:
-   /* Standardized response structure */
-   ```typescript
-   interface ApiResponse<T> {
-     success: boolean;
-     data?: T;
-     error?: {
-       code: string;
-       message: string;
-       details?: unknown;
-     };
-     metadata?: {
-       timestamp: string;
-       requestId: string;
-     };
-   }
-   ```
-
-5. Integration with Core Services:
-   - API routes utilize /lib/core/api for common functionality
-   - Error handling uses /lib/core/errorHandling
-   - Authentication uses /lib/core/auth
-   - Real-time features use /lib/core/websocket
-
-6. Type Safety:
-   - All endpoints have corresponding request/response types
-   - Zod validation schemas for runtime checking
-   - Shared types between frontend and API
-
-Potential Improvements:
-1. Add API versioning (/api/v1/...)
-2. Implement request/response compression
-3. Add request caching strategy
-4. Enhance monitoring and logging
-5. Add API documentation generation
 
 Component Functions Breakdown:
 
@@ -411,13 +185,90 @@ Component Functions Breakdown:
       - PageSelector({ onSelect })
       - NavigationArrows({ onNext, onPrev })
 
-React Component Relationships:
 
-1. Provider Layer (Top Level)
-/* Provides global state and context */
-ChatProvider ─────┐
-                 ├──> All Components (via Context)
-DocumentProvider ─┤
-ThemeProvider ────┘
 
-2. Main Component Hierarchy
+
+
+App Structure
+│
+├── /app/api/
+│   ├── /chat
+│   │   ├── /messages
+│   │   │   ├── POST /chat/messages
+│   │   │   ├── PUT /chat/messages/[id]
+│   │   │   ├── DELETE /chat/messages/[id]
+│   │   │   └── GET /chat/messages
+│   │   │
+│   │   └── /conversations
+│   │       ├── GET /chat/conversations
+│   │       ├── POST /chat/conversations
+│   │       ├── DELETE /conversations/[id]
+│   │       └── PUT /conversations/[id]
+│   │
+│   ├── /ai
+│   │   ├── /completion
+│   │   │   ├── POST /ai/completion
+│   │   │   └── POST /ai/completion/stream
+│   │   │
+│   │   ├── /models
+│   │   │   ├── GET /ai/models
+│   │   │   └── POST /ai/models/switch
+│   │   │
+│   │   └── /context
+│   │       ├── POST /ai/context
+│   │       └── GET /ai/context/[conversationId]
+│   │
+│   ├── /documents
+│   │   ├── POST /documents/upload
+│   │   ├── GET /documents
+│   │   ├── GET /documents/[id]
+│   │   ├── DELETE /documents/[id]
+│   │   ├── POST /documents/process
+│   │   └── GET /documents/[id]/content
+│   │
+│   └── /auth
+│       ├── POST /auth/login
+│       ├── POST /auth/logout
+│       ├── POST /auth/refresh
+│       └── GET /auth/session
+│
+├── /providers
+│   ├── ChatProvider.tsx
+│   ├── DocumentProvider.tsx
+│   └── ThemeProvider.tsx
+│
+├── /ui
+│   ├── Button.tsx
+│   └── Input.tsx
+│
+├── /chat
+│   ├── /conversation
+│   │   ├── ChatContainer.tsx
+│   │   ├── ChatHeader.tsx
+│   │   └── ChatBody.tsx
+│   │
+│   ├── /messages
+│   │   ├── MessageList.tsx
+│   │   ├── MessageItem.tsx
+│   │   └── MessageActions.tsx
+│   │
+│   ├── /input
+│   │   ├── ChatInput.tsx
+│   │   ├── InputActions.tsx
+│   │   └── AttachmentButton.tsx
+│   │
+│   └── /sidebar
+│       ├── ChatHistory.tsx
+│       ├── ChatFilter.tsx
+│       └── HistoryItem.tsx
+│
+└── /document
+    ├── /uploader
+    │   ├── FileUpload.tsx
+    │   ├── UploadProgress.tsx
+    │   └── FileList.tsx
+    │
+    └── /viewer
+        ├── DocumentViewer.tsx
+        ├── DocumentToolbar.tsx
+        └── PageNavigation.tsx

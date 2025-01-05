@@ -1,28 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { createSuccessResponse, createErrorResponse } from '@/lib/utils/apiUtils';
 import { EmbeddingService } from '@/lib/features/ai/services/embeddingService';
 
 export async function POST(req: NextRequest) {
   try {
-    const { input, model = "all-minilm" } = await req.json();
+    const { input, model = 'mxbai-embed-large' } = await req.json();
 
-    if (!input) {
-      return NextResponse.json(
-        { error: 'Missing required input parameter' }, 
-        { status: 400 }
-      );
-    }
+    // Handle both single string and array of strings
+    const inputs = Array.isArray(input) ? input : [input];
 
-    const embeddingResponse = await EmbeddingService.createEmbedding(input);
+    const response = await EmbeddingService.createEmbedding(inputs, model);
 
-    return NextResponse.json(embeddingResponse);
+    return createSuccessResponse({
+      model,
+      embeddings: response.embeddings,
+      usage: response.usage
+    });
+
   } catch (error) {
-    console.error('Error generating embedding:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to generate embedding', 
-        details: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
-      { status: 500 }
+    console.error('Error generating embeddings:', error);
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to generate embeddings'
     );
   }
 } 

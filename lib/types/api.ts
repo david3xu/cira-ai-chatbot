@@ -1,18 +1,23 @@
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  details?: unknown;
-}
+/**
+ * API Types
+ * 
+ * Type definitions for API interactions:
+ * - Request/Response types
+ * - Chat operations
+ * - Model updates
+ * - Document handling
+ * 
+ * Features:
+ * - Type safety
+ * - Error handling
+ * - Response formatting
+ * - Request validation
+ */
 
-export interface ChatRequest {
-  message: string;
-  chatId: string;
-  dominationField: string;
-  model: string;
-  customPrompt?: string;
-  imageFile?: string;
-  skipMessageStorage?: boolean;
+export interface ApiResponse<T> {
+  data: T;
+  error?: string;
+  status: 'success' | 'error';
 }
 
 export interface ModelUpdateRequest {

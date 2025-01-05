@@ -1,3 +1,20 @@
+/**
+ * Large File Upload Service
+ * 
+ * Handles large file processing and storage with:
+ * - Text chunking
+ * - Embedding generation
+ * - Progress tracking
+ * - Supabase integration
+ * 
+ * Features:
+ * - Batch processing
+ * - Cancellation support
+ * - Progress reporting
+ * - Error handling
+ * - Efficient chunking
+ */
+
 import { supabase } from '@/lib/supabase/client';
 import { TextChunkingService } from '@/lib/services/document/processing/TextChunkingService';
 import { EmbeddingService } from '@/lib/services/document/embedding/EmbeddingService';
@@ -40,14 +57,13 @@ export async function uploadLargeFileToSupabase(
         const { error } = await supabase
           .from('documents')
           .insert({
-            source,
-            source_id: `${hash}-${i + j}`,
+            author,
             content: batchChunks[j],
             document_id: `${fileName}-part${i + j + 1}`,
-            author,
-            url: fileName,
-            embedding: embeddings,
             domination_field: dominationField,
+            url: fileName,
+            embedding: JSON.stringify(embeddings[j]),
+            metadata: { source, source_id: `${hash}-${i + j}` }
           });
 
         if (error) throw error;

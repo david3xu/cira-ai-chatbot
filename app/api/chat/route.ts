@@ -1,181 +1,101 @@
-import { NextRequest } from 'next/server';
-import { createErrorResponse } from '@/lib/utils/apiUtils';
-import { z } from 'zod';
-import { ChatStorageManager } from '@/lib/features/chat/utils/ChatStorageManager';
-import { ErrorHandler } from '@/lib/utils/error';
+import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
-export const runtime = 'edge';
+// Use environment variables
+const DEFAULT_USER_ID = process.env.NEXT_PUBLIC_DEFAULT_USER_ID;
+const DEFAULT_PROMPT = "You are a helpful AI assistant. Answer questions accurately and concisely.";
 
-// Schema for different chat operations
-const chatSchemas = {
-  create: z.object({
-    model: z.string().optional(),
-    domination_field: z.string().optional(),
-    name: z.string().optional(),
-    custom_prompt: z.string().nullable().optional(),
-    metadata: z.record(z.any()).optional(),
-    source: z.string()
-  }),
-  update: z.object({
-    chat_id: z.string().uuid('Invalid chat ID'),
-    updates: z.object({
-      name: z.string().optional(),
-      model: z.string().optional(),
-      custom_prompt: z.string().nullable().optional(),
-      domination_field: z.string().optional(),
-      metadata: z.record(z.any()).optional()
-    })
-  })
-};
-
-const validateRequest = async (req: NextRequest, schema: z.ZodSchema) => {
+export async function POST(req: Request) {
   try {
+    const supabase = createRouteHandlerClient({ cookies });
+    let userId = DEFAULT_USER_ID;
+
+    // Get request body
     const body = await req.json();
-    return await schema.parseAsync(body);
-  } catch (error) {
-    console.error('Request validation error:', error);
-    throw error;
-  }
-};
+    console.log('Request body:', body);
 
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof z.ZodError) {
-    return `Validation error: ${error.errors[0].message}`;
-  }
-  return error instanceof Error ? error.message : 'An unexpected error occurred';
-};
-
-export async function POST(req: NextRequest) {
-  console.log('Received chat creation request:', req.url);
-  
-  try {
-    const validatedData = await validateRequest(req, chatSchemas.create);
+    // Destructure with default values
+    const {
+      model,
+      name = 'New Chat',
+      dominationField,
+      customPrompt
+    } = body;
     
-    const chatId = crypto.randomUUID();
-    const chat = {
-      id: chatId,
-      model: validatedData.model || 'null',
-      dominationField: validatedData.domination_field || 'Normal Chat',
-      name: validatedData.name || 'New Chat',
-      customPrompt: validatedData.custom_prompt || null,
-      metadata: {
-        ...validatedData.metadata,
-        source: validatedData.source
-      },
-      userId: '',
-      messages: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    // Validate required fields
+    if (!model) {
+      return NextResponse.json(
+        { error: 'Model is required' },
+        { status: 400 }
+      );
+    }
 
-    await ChatStorageManager.executeTransaction(async () => {
-      await ChatStorageManager.updateChat(chat);
+    if (!dominationField) {
+      return NextResponse.json(
+        { error: 'Domination field is required' },
+        { status: 400 }
+      );
+    }
+
+    // Use default prompt if none provided
+    const finalPrompt = customPrompt || DEFAULT_PROMPT;
+    
+    console.log('Using model:', model);
+    console.log('Using domination field:', dominationField);
+    console.log('Using custom prompt:', finalPrompt, customPrompt ? '(user provided)' : '(default)');
+
+    const { data: chat, error: rpcError } = await supabase.rpc('create_chat', {
+      p_user_id: userId,
+      p_name: name,
+      p_model: model,
+      p_domination_field: dominationField,
+      p_custom_prompt: finalPrompt
     });
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      data: { chat } 
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    if (rpcError) {
+      console.error('RPC Error:', rpcError);
+      return NextResponse.json(
+        { error: 'Failed to create chat' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ data: chat });
   } catch (error) {
-    console.error('Chat creation error:', error);
-    return createErrorResponse(getErrorMessage(error), 500);
-  }
-}
-
-export async function PATCH(req: NextRequest) {
-  console.log('Received chat update request:', req.url);
-  
-  try {
-    const validatedData = await validateRequest(req, chatSchemas.update);
-    
-    const chat = await ChatStorageManager.executeWithTransaction(
-      validatedData.chat_id,
-      async () => {
-        const existingChat = await ChatStorageManager.getChat(validatedData.chat_id);
-        if (!existingChat) {
-          throw new Error('Chat not found');
-        }
-
-        const updatedChat = {
-          ...existingChat,
-          ...validatedData.updates,
-          updatedAt: new Date().toISOString()
-        };
-
-        await ChatStorageManager.updateChat(updatedChat);
-        return updatedChat;
-      }
+    console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
     );
-
-    return new Response(JSON.stringify({ 
-      success: true, 
-      data: { chat } 
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    console.error('Chat update error:', error);
-    return createErrorResponse(getErrorMessage(error), 500);
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const url = new URL(req.url);
-    const chatId = url.searchParams.get('chat_id');
+    const supabase = createRouteHandlerClient({ cookies });
+    let userId = DEFAULT_USER_ID;
 
-    if (!chatId) {
-      return createErrorResponse('Chat ID is required', 400);
+    const { data: chats, error } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Database error:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch chats' },
+        { status: 500 }
+      );
     }
 
-    const chat = await ChatStorageManager.executeTransaction(async () => {
-      const result = await ChatStorageManager.getChat(chatId);
-      return result;
-    });
-
-    if (!chat) {
-      return createErrorResponse('Chat not found', 404);
-    }
-
-    return new Response(JSON.stringify({ 
-      success: true, 
-      data: { chat } 
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return NextResponse.json({ data: chats });
   } catch (error) {
-    console.error('Chat fetch error:', error);
-    return createErrorResponse(getErrorMessage(error), 500);
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  try {
-    const url = new URL(req.url);
-    const chatId = url.searchParams.get('chat_id');
-
-    if (!chatId) {
-      return createErrorResponse('Chat ID is required', 400);
-    }
-
-    await ChatStorageManager.executeTransaction(async () => {
-      await ChatStorageManager.deleteChat(chatId);
-      return;
-    });
-
-    return new Response(JSON.stringify({ 
-      success: true 
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    console.error('Chat deletion error:', error);
-    return createErrorResponse(getErrorMessage(error), 500);
+    console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

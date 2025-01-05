@@ -1,25 +1,45 @@
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+// /**
+//  * Routes Configuration
+//  * 
+//  * Defines API and application routes for the chat and document operations.
+//  * Uses environment variables for base URL configuration.
+//  * 
+//  * Features:
+//  * - API route definitions for chat and document operations
+//  * - Dynamic route generation with parameters
+//  * - Centralized route management
+//  * - Environment-aware configuration
+//  */
 
-export const API_ROUTES = {
-  CHAT: {
-    CREATE: `${BASE_URL}/api/chat/create`,
-    GET: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
-    DELETE: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
-    UPDATE_PROMPT: `${BASE_URL}/api/chat/update-prompt`,
-    UPDATE_MODEL: (chatId: string) => `${BASE_URL}/api/chat/${chatId}/model`,
-    SEND_MESSAGE: `${BASE_URL}/api/chat/send-message`,
-    PROCESS_MARKDOWN: `${BASE_URL}/api/chat/process-markdown`,
-    UPDATE_NAME: (chatId: string) => `${BASE_URL}/api/chat/${chatId}/name`
-  },
-  OLLAMA: {
-    EMBEDDINGS: `${BASE_URL}/api/embeddings`,
-    // ... other ollama routes
-    // 
-  }
-};
+// const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
-export const APP_ROUTES = {
-  CHAT: {
-    VIEW: (chatId: string) => `/chat/${chatId}`
-  }
-};
+// export const API_ROUTES = {
+//   CHAT: {
+//     CREATE: `${BASE_URL}/api/chat`,
+//     GET: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
+//     DELETE: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
+//     UPDATE_PROMPT: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
+//     UPDATE_NAME: (chatId: string) => `${BASE_URL}/api/chat/${chatId}`,
+//     SEND_MESSAGE: `${BASE_URL}/api/chat/messages`,
+//     MESSAGES: {
+//       GET: (chatId: string) => `${BASE_URL}/api/chat/messages/${chatId}`,
+//       DELETE: (messageId: string) => `${BASE_URL}/api/chat/messages/${messageId}`,
+//     }
+//   },
+//   AI: {
+//     COMPLETION: `${BASE_URL}/api/ai/completion`,
+//     STREAM: `${BASE_URL}/api/ai/completion/stream`,
+//     MODELS: `${BASE_URL}/api/ai/models`,
+//     CONTEXT: `${BASE_URL}/api/ai/context`
+//   }
+// };
+
+// export const APP_ROUTES = {
+//   CHAT: {
+//     VIEW: (chatId: string) => `/chat/${chatId}`
+//   },
+//   DOCUMENTS: {
+//     VIEW: (documentId: string) => `/documents/${documentId}`,
+//     LIST: '/documents'
+//   }
+// };

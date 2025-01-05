@@ -1,12 +1,12 @@
-import { databaseActions } from './databaseActions';
-import { persistentActions } from './persistentActions';
-import { sessionActions } from './sessionActions';
+// // import { databaseActions } from './databaseActions';
+// import { persistentActions } from './persistentActions';
+// import { sessionActions } from './sessionActions';
 
-export const storageActions = {
-  database: {
-    ...databaseActions,
-  },
-  persistent: persistentActions,
-  session: sessionActions
-};
+// export const storageActions = {
+//   // database: {
+//   //   ...databaseActions,
+//   // },
+//   persistent: persistentActions,
+//   session: sessionActions
+// };
 

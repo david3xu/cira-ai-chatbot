@@ -1,3 +1,19 @@
+/**
+ * AI Configuration Constants
+ * 
+ * Defines core AI configuration parameters:
+ * - Token limits
+ * - Temperature settings
+ * - Retry policies
+ * - Domain definitions
+ * 
+ * Features:
+ * - Type-safe domain fields
+ * - Helper functions
+ * - Default configurations
+ * - UI option generation
+ */
+
 export const AI_CONSTANTS = {
   MAX_TOKENS: 2000,
   DEFAULT_TEMPERATURE: 0.7,
@@ -7,18 +23,21 @@ export const AI_CONSTANTS = {
   EMBEDDING_MODEL: 'mxbai-embed-large:latest'
 };
 
-export const DEFAULT_MODEL = 'llama3.1';
-
 // Combined domination fields definition
 export const DOMINATION_FIELDS = {
   RUBIN: 'Rubin Observation',
-  NORMAL_CHAT: 'Normal Chat',
+  NORMAL_CHAT: 'General',
   PROGRAMMING: 'Programming Languages',
   DATA_MINING: 'Data Mining',
   DSA: 'Data Structures and Algorithms',
-  EMAIL: 'Email'
+  EMAIL: 'Email',
+  CYBERSECURITY: 'Cybersecurity',
+  NETWORKING: 'Networking',
+  CLOUD: 'Cloud',
+  DEVOPS: 'DevOps'
 } as const;
 
+export const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Type for domination fields
 export type DominationField = typeof DOMINATION_FIELDS[keyof typeof DOMINATION_FIELDS];

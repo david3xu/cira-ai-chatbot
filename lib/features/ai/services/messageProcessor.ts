@@ -1,11 +1,28 @@
-import { FormattedMessage } from '@/lib/types/chat/formattedMessage';
+/**
+ * Message Processor Service
+ * 
+ * Processes chat messages with:
+ * - History management
+ * - System message integration
+ * - Image handling
+ * - Message formatting
+ * 
+ * Features:
+ * - Chat history processing
+ * - System prompt integration
+ * - Image support
+ * - Null checking
+ * - Debug logging
+ */
 
-export function processMessages(
+import { FormattedMessage } from '@/lib/types';
+
+export async function processMessages(
   chatHistory: any[],
   prompt: string,
   systemMessage: string,
   imageBase64?: string
-): FormattedMessage[] {
+): Promise<FormattedMessage[]> {
   console.log('🔄 [messageProcessor] Processing messages:', {
     historyLength: chatHistory.length,
     hasSystemMessage: !!systemMessage,

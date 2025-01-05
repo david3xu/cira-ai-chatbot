@@ -1,11 +1,26 @@
+/**
+ * Answer Question Action
+ * 
+ * Handles AI response generation with:
+ * - Context-aware responses
+ * - Domain-specific processing
+ * - Streaming support
+ * - Message persistence
+ * 
+ * Features:
+ * - Multiple domain support (Email, Programming, etc.)
+ * - Hybrid search integration
+ * - Error handling and retries
+ * - Progress tracking
+ * - Message formatting and storage
+ */
+
 import { performHybridSearch } from '@/lib/features/ai/utils/embedding';
 import { structureResponse } from '@/lib/features/ai/utils/responseFormatter';
 import { processMessages } from '../services/messageProcessor';
 import { createCompletion } from '../services/completionService';
 import { getContextualPrompt } from '../prompts/systemMessages';
-// import { FormattedMessage } from '@/lib/types/chat/formattedMessage';
-import { saveMessagePair } from '@/lib/features/chat/actions/storeMessage';
-import { ChatMessage } from '@/lib/types/chat/chat';
+import { ChatMessage } from '@/lib/types';
 import { DOMINATION_FIELDS, DominationField } from '../config/constants';
 
 interface AnswerQuestionResponse {
@@ -24,6 +39,41 @@ interface AnswerQuestionOptions {
   skipStorage?: boolean;
 }
 
+async function generateChatTopic(
+  messages: ChatMessage[],
+  latestUserContent: string,
+  model: string
+): Promise<string | undefined> {
+  // Generate topic for first message or if significant conversation has occurred
+  if (messages.length <= 1 || messages.length >= 3) {
+    try {
+      const conversation = messages.length > 0 
+        ? messages
+          .slice(-3) // Take last 3 messages for context
+          .map(msg => `${msg.userRole}: ${msg.userContent || ''}\n${msg.assistantRole}: ${msg.assistantContent || ''}`)
+          .join('\n')
+        : latestUserContent;
+
+      const topicPrompt = messages.length <= 1
+        ? `Generate a concise (max 6 words) but descriptive chat topic for this message:\n\n${latestUserContent}\n\nTopic:`
+        : `Based on this conversation, generate a concise (max 6 words) but descriptive chat topic that captures the main theme:\n\n${conversation}\n\nLatest message: ${latestUserContent}\n\nTopic:`;
+
+      const topic = await createCompletion(
+        [{ role: 'user', content: topicPrompt }],
+        model,
+        async () => {} // Empty callback since we don't need streaming for topic
+      );
+
+      return topic?.trim();
+    } catch (error) {
+      console.warn('Failed to generate chat topic:', error);
+      // Fallback to user content for first message
+      return messages.length <= 1 ? latestUserContent : undefined;
+    }
+  }
+  return undefined;
+}
+
 export async function answerQuestion(options: AnswerQuestionOptions): Promise<AnswerQuestionResponse> {
   const {
     messages,
@@ -31,20 +81,24 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     dominationField = DOMINATION_FIELDS.NORMAL_CHAT,
     chatId,
     customPrompt = null,
-    imageFile,
-    model,
-    skipStorage = false
+    model
   } = options;
 
-  console.log('🎯 [answerQuestion] Starting with options:', {
+  console.log('🎯 [answerQuestion] Received options:', {
+    model,
     dominationField,
     chatId,
-    model,
-    messageCount: messages.length
+    messageCount: messages.length,
+    hasCustomPrompt: !!customPrompt,
+    customPromptPreview: customPrompt ? `${customPrompt.slice(0, 50)}...` : null
   });
 
   try {
-    console.log('Starting answerQuestion with model:', model);
+    console.log('🔍 [answerQuestion] Processing with model and field:', {
+      model,
+      dominationField,
+      latestMessageLength: messages[messages.length - 1]?.userContent.length
+    });
 
     // Get the latest user message content, ensure it's not null
     const latestUserContent = messages[messages.length - 1]?.userContent;
@@ -99,9 +153,12 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       customPrompt
     );
 
-    console.log('📝 [answerQuestion] Created system message with domination field:', {
+    console.log('📝 [answerQuestion] Created system message:', {
       dominationField,
-      messageLength: systemMessage.length
+      messageLength: systemMessage.length,
+      hasCustomPrompt: !!customPrompt,
+      customPromptLength: customPrompt?.length || 0,
+      systemMessagePreview: `${systemMessage.slice(0, 100)}...`
     });
 
     // Process messages for context
@@ -111,69 +168,60 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       systemMessage
     );
 
-    console.log('✅ [answerQuestion] Messages processed, sending to model');
+    console.log('✅ [answerQuestion] Messages processed:', {
+      processedMessageCount: processedMessages.length,
+      firstMessagePreview: processedMessages[0] ? `${processedMessages[0].content.slice(0, 50)}...` : null
+    });
 
-    // Create completion
-    let fullResponse = await createCompletion(
-      processedMessages,
-      model || 'default',
-      onToken
-    );
+    // Create completion with proper error handling
+    let fullResponse = '';
+    try {
+      console.log('🔍 [answerQuestion] Calling createCompletion:', {
+        model,
+        dominationField,
+        processedMessageCount: processedMessages.length,
+        customPromptUsed: !!customPrompt
+      });
 
-    // Handle empty responses with domain-specific retry
-    if (!fullResponse?.trim()) {
-      console.log('Empty response received, retrying with domain-specific prompt...');
-      const retryPrompt = getDomainSpecificRetryPrompt(dominationField, latestUserContent);
       fullResponse = await createCompletion(
-        [{ role: 'user', content: retryPrompt }],
+        processedMessages,
         model || 'default',
         onToken
       );
-
+      
       if (!fullResponse?.trim()) {
-        throw new Error('Unable to generate a valid response after retry');
+        console.log('Empty response, retrying...');
+        const retryPrompt = getDomainSpecificRetryPrompt(dominationField, latestUserContent);
+        fullResponse = await createCompletion(
+          [{ role: 'user', content: retryPrompt }],
+          model || 'default',
+          onToken
+        );
       }
+    } catch (error) {
+      console.error('Completion error:', error);
+      throw new Error('Failed to generate response');
     }
 
-    // Save messages if storage is not skipped
-    if (!skipStorage) {
-      try {
-        const messagePairId = crypto.randomUUID();
-        const userMessage: ChatMessage = {
-          id: crypto.randomUUID(),
-          chatId,
-          messagePairId,
-          userContent: latestUserContent,
-          assistantContent: null,
-          userRole: 'user',
-          assistantRole: 'assistant',
-          model: model || 'default',
-          dominationField,
-          customPrompt: customPrompt || null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          status: 'sending'
-        };
-
-        const assistantMessage: ChatMessage = {
-          ...userMessage,
-          id: crypto.randomUUID(),
-          userContent: null,
-          assistantContent: fullResponse,
-          status: 'success'
-        };
-
-        await saveMessagePair(userMessage, assistantMessage);
-      } catch (error) {
-        console.error('Error saving messages:', error);
-      }
+    if (!fullResponse?.trim()) {
+      throw new Error('Unable to generate a valid response');
     }
 
-    // Return the structured response with proper typing
-    return {
+    // Generate chat topic if needed
+    const chat_topic = await generateChatTopic(messages, latestUserContent, model || 'default');
+
+    const structuredResponse = {
       content: structureResponse(fullResponse),
-      chat_topic: messages.length === 0 ? latestUserContent : undefined
+      chat_topic
     };
+
+    console.log('✨ Generated response:', {
+      responseLength: structuredResponse.content.length,
+      hasChatTopic: !!chat_topic,
+      chatTopic: chat_topic
+    });
+
+    return structuredResponse;
 
   } catch (error) {
     console.error('Error in answerQuestion:', error);

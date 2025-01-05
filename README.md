@@ -91,7 +91,9 @@ The project uses Supabase with the following main tables:
 To update database schema:
 
 ```bash
-supabase db reset
+npm run 
+npx supabase db reset
+npx supabase migration up
 ```
 
 ## Contributing
