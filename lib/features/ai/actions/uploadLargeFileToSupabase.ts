@@ -17,7 +17,7 @@
 
 import { supabase } from '@/lib/supabase/client';
 import { TextChunkingService } from '@/lib/services/document/processing/TextChunkingService';
-import { EmbeddingService } from '@/lib/services/document/embedding/EmbeddingService';
+import { EmbeddingService } from '@/lib/features/ai/services/embeddingService';
 
 const EMBEDDINGS_BATCH_SIZE = 128;
 
@@ -48,21 +48,22 @@ export async function uploadLargeFileToSupabase(
       }
 
       const batchChunks = chunks.slice(i, i + EMBEDDINGS_BATCH_SIZE);
-      const embeddings = await EmbeddingService.createEmbeddings(batchChunks);
+      const response = await EmbeddingService.createEmbedding(batchChunks);
+      const embeddings = response.embeddings;
 
       // Upload chunks with their embeddings
       for (let j = 0; j < batchChunks.length; j++) {
         if (!embeddings) continue;
 
         const { error } = await supabase
-          .from('documents')
+          .from('document_chunks')
           .insert({
             author,
             content: batchChunks[j],
             document_id: `${fileName}-part${i + j + 1}`,
             domination_field: dominationField,
             url: fileName,
-            embedding: JSON.stringify(embeddings[j]),
+            content_vector: embeddings[j],
             metadata: { source, source_id: `${hash}-${i + j}` }
           });
 

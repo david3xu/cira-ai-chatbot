@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { useChatContext } from '@/lib/hooks/chat/useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useLoadingActions } from '@/lib/hooks/state/useLoadingActions'
 import { ChatService } from '@/lib/services/ChatService'
 import type { Chat, ChatMessage } from '@/lib/types'

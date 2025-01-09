@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useReducer, useMemo, useEffect } from 'react';
-import { ThemeContext } from './contexts';
+import { ThemeContext } from './context';
 import { ThemeState, ThemeAction } from '@/lib/types';
 import { ProviderProps } from '@/lib/types/provider';
 

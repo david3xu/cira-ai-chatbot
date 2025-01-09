@@ -15,7 +15,9 @@ export const transformDatabaseMessage = (
   assistantRole: msg.assistant_role as 'assistant' | 'system',
   dominationField: msg.domination_field || '',
   model: msg.model || '',
-  status: msg.status as 'sending' | 'success' | 'failed'
+  status: msg.status as 'sending' | 'success' | 'failed',
+  customPrompt: msg.custom_prompt === null ? undefined : msg.custom_prompt,
+  metadata: msg.metadata as Record<string, any> || {}
 });
 
 export const transformMessageToDatabase = (
@@ -30,5 +32,7 @@ export const transformMessageToDatabase = (
   assistant_role: msg.assistantRole,
   domination_field: msg.dominationField,
   model: msg.model,
-  status: msg.status
+  status: msg.status,
+  custom_prompt: msg.customPrompt || null,
+  metadata: msg.metadata || null
 }); 

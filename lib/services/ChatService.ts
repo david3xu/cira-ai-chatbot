@@ -14,6 +14,7 @@ import { ChatError, ErrorCodes } from '@/lib/types/errors';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Database } from '@/supabase/types/database.types';
 import { transformDatabaseMessage } from '@/lib/utils/messageTransformer';
+import { DEFAULT_PROMPT } from '@/lib/features/ai/config/constants';
 
 interface MessageResponse extends Response {
   messages?: ChatMessage[];
@@ -115,7 +116,8 @@ export class ChatService extends ApiService {
           p_content: content,
           p_model: options.model,
           p_chat_id: options.chatId,
-          p_domination_field: options.dominationField
+          p_domination_field: options.dominationField,
+          p_custom_prompt: options.customPrompt || undefined
         });
 
       if (dbError) throw dbError;
@@ -219,6 +221,8 @@ export class ChatService extends ApiService {
                   // Handle chat topic update
                   if (data.chat_topic && options.chatId) {
                     console.log('📝 Updating chat name with topic:', data.chat_topic);
+                    
+                    // Update chat name in chats table
                     const { error: updateError } = await this.supabase
                       .from('chats')
                       .update({ name: data.chat_topic })
@@ -227,6 +231,17 @@ export class ChatService extends ApiService {
                     if (updateError) {
                       console.error('Failed to update chat name:', updateError);
                     } else {
+                      // Update chat_topic in chat_history table
+                      const { error: historyError } = await this.supabase
+                        .from('chat_history')
+                        .update({ chat_topic: data.chat_topic })
+                        .eq('chat_id', options.chatId)
+                        .eq('message_pair_id', messagePairId);
+
+                      if (historyError) {
+                        console.error('Failed to update chat_topic in history:', historyError);
+                      }
+
                       // Get the updated chat to dispatch the update action
                       const { data: updatedChat, error: fetchError } = await this.supabase
                         .from('chats')
@@ -379,8 +394,8 @@ export class ChatService extends ApiService {
       );
     }
 
-    const DEFAULT_PROMPT = "You are a helpful AI assistant. Answer questions accurately and concisely.";
-    const customPrompt = options.customPrompt || DEFAULT_PROMPT;
+    // Let getSystemMessage handle the prompt hierarchy
+    const customPrompt = options.customPrompt || null;
 
     console.log('🏗️ [ChatService.createChat] Creating chat with options:', {
       model: options.model,

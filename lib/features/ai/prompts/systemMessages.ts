@@ -14,68 +14,69 @@
  * - Markdown formatting
  */
 
-import { DOMINATION_FIELDS, DominationField } from '../config/constants';
+import { DOMINATION_FIELDS, DEFAULT_PROMPT } from '../config/constants';
+import { DominationField } from './types';
 import { codeBlock } from 'common-tags';
 
-export function getSystemMessage(dominationField: DominationField): string {
-  switch (dominationField) {
-    case DOMINATION_FIELDS.RUBIN:
-      return 'You are a helpful assistant specializing in Rubin Observatory and astronomical observations.';
-    case DOMINATION_FIELDS.PROGRAMMING:
-      return 'You are a helpful assistant specializing in programming language concepts, design, and implementation.';
-    case DOMINATION_FIELDS.DATA_MINING:
-      return 'You are a helpful assistant specializing in data mining techniques, algorithms, and applications.';
-    case DOMINATION_FIELDS.DSA:
-      return 'You are a helpful assistant specializing in data structures, algorithms, and computational complexity.';
-    case DOMINATION_FIELDS.EMAIL:
-      return 'You are a helpful assistant specializing in email composition and communication.';
-    case DOMINATION_FIELDS.NORMAL_CHAT:
-    default:
-      return 'You are a friendly and helpful general-purpose assistant.';
-  }
+export function getSystemMessage(dominationField: DominationField, customPrompt?: string | null): string {
+  const baseMessage = (() => {
+    switch (dominationField) {
+      case DOMINATION_FIELDS.PROGRAMMING:
+        return 'You are a helpful assistant specializing in programming languages, design patterns, and software development.';
+      case DOMINATION_FIELDS.DATA_MINING:
+        return 'You are a helpful assistant specializing in data mining techniques, algorithms, and applications.';
+      case DOMINATION_FIELDS.DSA:
+        return 'You are a helpful assistant specializing in data structures, algorithms, and computational complexity.';
+      case DOMINATION_FIELDS.EMAIL:
+        return 'You are a helpful assistant specializing in email communication and professional writing.';
+      case DOMINATION_FIELDS.RUBIN:
+        return 'You are a helpful assistant specializing in Rubin Observatory and astronomical observations.';
+      case DOMINATION_FIELDS.NORMAL_CHAT:
+      default:
+        return DEFAULT_PROMPT;
+    }
+  })();
+
+  return customPrompt ? `${baseMessage}\n\nCustom Instructions:\n${customPrompt}` : baseMessage;
 }
 
 export function getContextualPrompt(
   dominationField: DominationField,
   previousConvo: string,
   latestUserContent: string,
-  contextText: string,
-  customPrompt?: string | null
+  contextText: string
 ): string {
   console.log('🎯 [systemMessages] Generating prompt for:', {
     dominationField,
-    hasCustomPrompt: !!customPrompt,
     contentLength: latestUserContent.length
   });
-
-  const prompt = customPrompt || undefined;
 
   switch (dominationField) {
     case DOMINATION_FIELDS.PROGRAMMING:
       console.log('📝 Using Programming Languages prompt');
-      return getProgrammingPrompt(previousConvo, latestUserContent, prompt);
+      return getProgrammingPrompt(previousConvo, latestUserContent);
     case DOMINATION_FIELDS.DATA_MINING:
       console.log('📝 Using Data Mining prompt');
-      return getDataMiningPrompt(previousConvo, latestUserContent, prompt);
+      return getDataMiningPrompt(previousConvo, latestUserContent);
     case DOMINATION_FIELDS.DSA:
-      return getDSAPrompt(previousConvo, latestUserContent, prompt);
+      console.log('📝 Using DSA prompt');
+      return getDSAPrompt(previousConvo, latestUserContent);
     case DOMINATION_FIELDS.EMAIL:
-      return getEmailPrompt(previousConvo, latestUserContent, prompt);
+      return getEmailPrompt(previousConvo, latestUserContent);
     case DOMINATION_FIELDS.RUBIN:
-      return getRubinPrompt(previousConvo, latestUserContent, prompt);
+      return getRubinPrompt(previousConvo, latestUserContent);
     case DOMINATION_FIELDS.NORMAL_CHAT:
     default:
-      return getNormalChatPrompt(previousConvo, latestUserContent, prompt);
+      console.log('📝 Using Normal Chat prompt');
+      return getNormalChatPrompt(previousConvo, latestUserContent);
   }
 }
 
 export function getNormalChatPrompt(
   previousConvo: string,
-  latestUserContent: string,
-  customPrompt?: string
+  latestUserContent: string
 ): string {
-  return `${customPrompt ? `${customPrompt}\n\n` : ''}
-Previous conversation:
+  return `Previous conversation:
 ${previousConvo}
 
 Current question:
@@ -84,8 +85,7 @@ ${latestUserContent}`;
 
 export function getProgrammingPrompt(
   previousConvo: string,
-  sanitizedQuery: string,
-  customPrompt?: string
+  sanitizedQuery: string
 ): string {
   return codeBlock`
     You are an AI assistant specializing in programming languages. Your task is to provide accurate and detailed responses about programming language concepts, design patterns, and implementation details.
@@ -96,8 +96,6 @@ export function getProgrammingPrompt(
     Current question: """
     ${sanitizedQuery}
     """
-
-    ${customPrompt ? `Custom instructions: ${customPrompt}\n` : ''}
 
     Instructions:
     - Provide accurate programming language information
@@ -114,8 +112,7 @@ export function getProgrammingPrompt(
 
 export function getDataMiningPrompt(
   previousConvo: string,
-  sanitizedQuery: string,
-  customPrompt?: string
+  sanitizedQuery: string
 ): string {
   return codeBlock`
     You are an AI assistant specializing in data mining. Your task is to provide accurate and detailed responses about data mining concepts, techniques, and applications.
@@ -126,8 +123,6 @@ export function getDataMiningPrompt(
     Current question: """
     ${sanitizedQuery}
     """
-
-    ${customPrompt ? `Custom instructions: ${customPrompt}\n` : ''}
 
     Instructions:
     - Provide accurate data mining information
@@ -144,9 +139,13 @@ export function getDataMiningPrompt(
 
 export function getDSAPrompt(
   previousConvo: string,
-  sanitizedQuery: string,
-  customPrompt?: string
+  sanitizedQuery: string
 ): string {
+  console.log('📝 [getDSAPrompt] Creating prompt with:', {
+    previousConvoLength: previousConvo.length,
+    queryLength: sanitizedQuery.length
+  });
+
   return codeBlock`
     You are an AI assistant specializing in data structures and algorithms. Your task is to provide accurate and detailed responses about algorithmic concepts, complexity analysis, and implementation details.
 
@@ -156,8 +155,6 @@ export function getDSAPrompt(
     Current question: """
     ${sanitizedQuery}
     """
-
-    ${customPrompt ? `Custom instructions: ${customPrompt}\n` : ''}
 
     Instructions:
     - Provide accurate algorithm and data structure information
@@ -196,11 +193,9 @@ export function getDocumentPrompt(contextText: string, previousConvo: string, sa
   `;
 }
 
-export function getEmailPrompt(previousConvo: string, sanitizedQuery: string, customPrompt?: string) {
-  const action = customPrompt?.toLowerCase().includes('rewrite') ? 'rewrite' : 'answer';
-  
+export function getEmailPrompt(previousConvo: string, sanitizedQuery: string) {
   return codeBlock`
-    You are an AI assistant specializing in email communication. Your task is to ${action === 'answer' ? 'compose a response to' : 'rewrite'} an email based on the user's request.
+    You are an AI assistant specializing in email communication. Your task is to compose a response to an email based on the user's request.
 
     Previous conversation:
     ${previousConvo}
@@ -209,22 +204,19 @@ export function getEmailPrompt(previousConvo: string, sanitizedQuery: string, cu
     ${sanitizedQuery}
     """
 
-    ${customPrompt ? `Custom instructions: ${customPrompt}\n` : ''}
-
     Instructions:
-    - ${action === 'answer' ? 'Compose a response to the email' : 'Rewrite the email'} based on the request
+    - Compose a response to the email based on the request
     - Use appropriate greetings and closings
     - Format properly with markdown
     - Be professional and concise
 
-    ${action === 'answer' ? 'Email Response' : 'Rewritten Email'}:
+    Email Response:
   `;
 }
 
 export function getRubinPrompt(
   previousConvo: string,
-  sanitizedQuery: string,
-  customPrompt?: string
+  sanitizedQuery: string
 ): string {
   return codeBlock`
     You are an AI assistant specializing in Rubin Observatory and astronomical observations. Your task is to provide accurate and informative responses about astronomy, with a focus on the Rubin Observatory's capabilities and research.
@@ -235,8 +227,6 @@ export function getRubinPrompt(
     Current question: """
     ${sanitizedQuery}
     """
-
-    ${customPrompt ? `Custom instructions: ${customPrompt}\n` : ''}
 
     Instructions:
     - Provide accurate astronomical information
@@ -250,4 +240,26 @@ export function getRubinPrompt(
 
     Response:
   `;
+}
+
+export function formatConversationByDomain(
+  dominationField: DominationField,
+  userContent: string,
+  assistantContent: string
+): string {
+  switch (dominationField) {
+    case DOMINATION_FIELDS.EMAIL:
+      return `Email: ${userContent}\nResponse: ${assistantContent}`;
+    case DOMINATION_FIELDS.RUBIN:
+      return `Observer: ${userContent}\nAstronomer: ${assistantContent}`;
+    case DOMINATION_FIELDS.PROGRAMMING:
+      return `Question: ${userContent}\nProgrammer: ${assistantContent}`;
+    case DOMINATION_FIELDS.DATA_MINING:
+      return `Query: ${userContent}\nAnalyst: ${assistantContent}`;
+    case DOMINATION_FIELDS.DSA:
+      return `Problem: ${userContent}\nSolution: ${assistantContent}`;
+    case DOMINATION_FIELDS.NORMAL_CHAT:
+    default:
+      return `User: ${userContent}\nAssistant: ${assistantContent}`;
+  }
 } 

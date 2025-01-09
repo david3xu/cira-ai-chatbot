@@ -36,8 +36,8 @@ export interface ChatMessage {
   status: 'sending' | 'streaming' | 'success' | 'failed';
   createdAt: string;
   updatedAt: string;
-  customPrompt?: string;
-  metadata?: any;
+  customPrompt?: string | null | undefined;
+  metadata?: Record<string, any> | null;
   streaming?: {
     isActive: boolean;
     progress?: number;

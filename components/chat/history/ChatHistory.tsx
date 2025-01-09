@@ -2,7 +2,7 @@
 
 import React, { useMemo, useCallback } from 'react'
 import { useChat } from '@/lib/hooks/chat/useChat'
-import { useChatContext } from '@/lib/hooks/chat/useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useChatHistory } from '@/lib/hooks/chat/useChatHistory'
 import { HistoryList } from './HistoryList'
 import { HistorySearch } from './HistorySearch'

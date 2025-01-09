@@ -1,7 +1,7 @@
 'use client';
 
 import { useContext, useCallback } from 'react';
-import { ChatDomainContext } from '@/components/providers/chat/contexts';
+import { ChatDomainContext } from '@/lib/features/chat/context/chatContext';
 
 export function useChatDomain() {
   const context = useContext(ChatDomainContext);

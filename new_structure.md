@@ -1950,3 +1950,157 @@ State is maintained consistently
 
 
 However, I notice that while the chat name is being updated in the database, we're not dispatching an UPDATE_CHAT action to update the UI. Let me modify the ChatService.sendMessage method to dispatch the action when a chat topic is received.
+
+
+# custom prompt 
+After analyzing the code, I can confirm that the custom prompt implementation is successfully passing from UI to backend. Here's the flow:
+UI Layer (CustomPromptArea.tsx):
+API Layer (app/api/chat/route.ts):
+Service Layer (ChatService.ts):
+Prompt Integration (systemMessages.ts):
+The implementation preserves existing features by:
+Maintaining domain-specific prompt handling
+Keeping the default prompts as fallbacks
+Preserving the streaming response system
+Maintaining state synchronization
+Keeping proper error handling
+The custom prompt flows correctly through all layers:
+UI → State Management
+State → API Calls
+API → Database Storage
+Database → Message Processing
+Processing → AI Response
+Would you like me to explain any specific part of this flow in more detail?
+
+
+# uploader work flow 
+The current active files for document upload are:
+Core functionality:
+lib/features/document/actions/uploadDocument.ts - Main document upload logic
+lib/features/document/actions/processDocument.ts - Document processing
+UI Components:
+components/chat/conversation/ChatHeader.tsx - Upload button and UI
+components/chat/uploader/FileUploader.tsx - File selection and upload UI
+API Routes:
+app/api/documents/upload/route.ts - Server-side upload handling
+Types:
+lib/types/document.ts - Document type definitions
+lib/types/state/uploadedFile.ts - File upload types
+This structure is cleaner and more maintainable. Let me know if you'd like me to make any other cleanup changes!
+
+The changes we've made have addressed all the major issues:
+✅ Standardized Status Values:
+Created consistent status types
+Fixed status inconsistencies across files
+✅ Storage Configuration:
+Centralized storage config
+Consistent bucket names
+Standardized file size limits
+✅ Metadata Handling:
+Created proper DocumentMetadata interface
+Made required fields non-optional
+Added proper typing
+✅ Error Handling:
+Created DocumentError class
+Consistent error responses
+Proper error codes and messages
+✅ Default Values:
+Centralized default values
+Consistent usage across files
+Type-safe defaults
+✅ File Processing:
+Separated text processing utilities
+Consistent chunking logic
+Proper embedding generation
+✅ Type Safety:
+Fixed type definitions
+Added proper interfaces
+Removed any types
+Would you like me to:
+Add more validation checks?
+Implement additional error handling?
+Add more documentation?
+Or focus on another aspect of the code?
+
+
+# sql migrations
+Here's the final migration sequence (in order of execution):
+20240308100000_create_functions.sql - Base functions
+20240308100050_create_extensions.sql - Database extensions
+20240308100150_storage_policies.sql - Storage policies
+20240308100300_create_users.sql - User tables
+20240308100400_create_chats.sql - Chat tables
+20240308100500_create_chat_history.sql - Chat history
+20240308100600_create_documents.sql - Document tables
+20240308100700_create_files.sql - File tables
+20240308100725_create_rpc_functions.sql - RPC functions
+20240308100750_create_vector_search.sql - Vector search
+20240308100800_add_embedding_function.sql - Embedding
+20240308100850_create_model_settings.sql - Model settings
+20240308100900_add_relevance_scoring.sql - Relevance scoring
+20240308100950_create_hybrid_search.sql - Hybrid search
+20240308101000_grant_permissions.sql - Permissions
+
+
+# custom prompt 
+  UI (CustomPromptInput) 
+  -> State Management (usePersistentState) 
+  -> Chat Service 
+  -> Message Processor 
+  -> AI Response
+
+the logs show that the custom prompt is being:
+Properly saved in persistent state
+Correctly passed when creating new chats
+Maintained when loading existing chats
+Used when sending messages
+This suggests the custom prompt functionality is now working as intended. Could you verify if it's working correctly on your end? Specifically:
+Does the custom prompt persist when you create a new chat?
+Does it show up correctly when you switch between chats?
+3. Are the messages using the custom prompt when you send them?
+
+graph TD
+    A[User Input] --> B[CustomPromptInput Component]
+    B -->|Save| C[Persistent State]
+    C -->|Store| D[localStorage]
+    
+    B -->|Update| E[Chat Context]
+    E -->|Sync| F[Chat State]
+    
+    subgraph "Chat Creation"
+        G[New Chat Button] -->|Include| H[Create Chat Options]
+        C -->|Provide| H
+        H -->|API Call| I[Chat Service]
+    end
+    
+    subgraph "Message Flow"
+        J[Send Message] -->|Include| K[Message Options]
+        F -->|Provide| K
+        K -->|API Call| L[Chat Service]
+    end
+    
+    subgraph "Chat Loading"
+        M[Load Chat] -->|Fetch| N[Chat Data]
+        N -->|Update| E
+        N -->|Sync| C
+    end
+Here's how the custom prompt flows through the system:
+Input & Storage:
+User enters custom prompt in CustomPromptInput component
+Prompt is saved to persistent state and localStorage
+Chat context is updated with new prompt
+Chat Creation:
+When creating a new chat, NewChatButton gets prompt from persistent state
+Prompt is included in chat creation options
+Chat Service creates chat with custom prompt
+Message Handling:
+When sending messages, prompt is retrieved from chat state
+Included in message options
+Chat Service uses prompt for message generation
+Chat Loading:
+When loading an existing chat, prompt is fetched with chat data
+Chat context and persistent state are synchronized
+UI components update to show current prompt
+This workflow ensures the custom prompt is consistently maintained and properly used throughout the chat interactions.
+
+

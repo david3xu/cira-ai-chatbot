@@ -21,7 +21,8 @@ export const openai = new OpenAI({
   baseURL: process.env.NEXT_PUBLIC_OPENAI_URL,
   apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
   maxRetries: AI_CONSTANTS.MAX_RETRIES,
-  timeout: 30000
+  timeout: 30000,
+  dangerouslyAllowBrowser: true
 });
 
 export const defaultCompletionConfig = {

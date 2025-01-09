@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useReducer, useMemo } from 'react';
-import { ChatAPIContext } from './contexts';
+import { ChatAPIContext } from '@/lib/features/chat/context/chatContext';
 import { ChatAPIState } from '@/lib/types';
-import { ChatAction } from '@/lib/types';
+import { APIAction } from '@/lib/types';
 
 const initialState: ChatAPIState = {
   isLoading: false,
@@ -20,7 +20,7 @@ const initialState: ChatAPIState = {
   activeOperations: []
 };
 
-function apiReducer(state: ChatAPIState, action: ChatAction): ChatAPIState {
+function apiReducer(state: ChatAPIState, action: APIAction): ChatAPIState {
   switch (action.type) {
     case 'SET_LOADING':
       return { 
@@ -37,13 +37,13 @@ function apiReducer(state: ChatAPIState, action: ChatAction): ChatAPIState {
         ...state, 
         streamingStatus: action.payload 
       };
-    case 'ADD_PENDING_REQUEST':
+    case 'START_REQUEST':
       return {
         ...state,
         pendingRequests: [...state.pendingRequests, action.payload],
         isProcessing: true
       };
-    case 'REMOVE_PENDING_REQUEST': {
+    case 'END_REQUEST': {
       const newPendingRequests = state.pendingRequests.filter(
         id => id !== action.payload
       );
@@ -64,10 +64,10 @@ export function ChatAPIProvider({ children }: { children: React.ReactNode }) {
   // API State Actions
   const actions = useMemo(() => ({
     startRequest: (requestId: string) => 
-      dispatch({ type: 'ADD_PENDING_REQUEST', payload: requestId }),
+      dispatch({ type: 'START_REQUEST', payload: requestId }),
       
     endRequest: (requestId: string) => 
-      dispatch({ type: 'REMOVE_PENDING_REQUEST', payload: requestId }),
+      dispatch({ type: 'END_REQUEST', payload: requestId }),
       
     setStreamingStatus: (status: 'idle' | 'streaming' | 'complete') =>
       dispatch({ type: 'SET_STREAMING_STATUS', payload: status }),

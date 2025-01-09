@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useChatContext } from '../chat/useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 
 interface LoadingOptions {
   showMessage?: boolean
@@ -9,11 +9,11 @@ export function useLoadingActions() {
   const { dispatch } = useChatContext()
 
   const startLoading = useCallback((message?: string) => {
-    dispatch({ type: 'SET_LOADING_STATE', payload: { isLoading: true, message } })
+    dispatch({ type: 'SET_LOADING', payload: true })
   }, [dispatch])
 
   const stopLoading = useCallback(() => {
-    dispatch({ type: 'SET_LOADING_STATE', payload: { isLoading: false } })
+    dispatch({ type: 'SET_LOADING', payload: false })
   }, [dispatch])
 
   const withLoading = useCallback(async <T>(
@@ -22,12 +22,12 @@ export function useLoadingActions() {
     options: LoadingOptions = {}
   ): Promise<T> => {
     try {
-      dispatch({ type: 'SET_LOADING_STATE', payload: { isLoading: true, message: loadingMessage } })
+      startLoading(loadingMessage)
       return await action()
     } finally {
-      dispatch({ type: 'SET_LOADING_STATE', payload: { isLoading: false } })
+      stopLoading()
     }
-  }, [dispatch])
+  }, [startLoading, stopLoading])
 
   return { withLoading, startLoading, stopLoading }
 } 

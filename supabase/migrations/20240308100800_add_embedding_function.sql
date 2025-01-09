@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS http;
 
--- Create a function to get embeddings from OpenAI
+-- Create a function to get embeddings from Ollama
 CREATE OR REPLACE FUNCTION get_embedding(input_text TEXT)
 RETURNS vector
 LANGUAGE plpgsql
@@ -13,24 +13,17 @@ AS $$
 DECLARE
   embedding_vector vector(1024);
   api_response JSONB;
-  api_key TEXT := 'sk-proj-01H234567890123456789012345678901';
 BEGIN
-  -- Get API key from secure storage
-  SELECT current_setting('app.openai_key', TRUE) INTO api_key;
-  
-  -- Call OpenAI API
+  -- Call Ollama API
   SELECT content::jsonb INTO api_response
   FROM http((
     'POST',
-    'http://localhost:11434/v1/embeddings',
-    ARRAY[
-      ('Authorization', 'Bearer ' || api_key),
-      ('Content-Type', 'application/json')
-    ],
+    'http://localhost:11434/api/embeddings',
+    ARRAY[('Content-Type', 'application/json')],
     'application/json',
     jsonb_build_object(
       'model', 'mxbai-embed-large:latest',
-      'input', input_text
+      'prompt', input_text
     )::text
   )::http_request);
 
@@ -39,7 +32,7 @@ BEGIN
     SELECT array_to_vector(
       ARRAY(
         SELECT jsonb_array_elements_text(
-          api_response->'data'->0->'embedding'
+          api_response->'embedding'
         )::float
       )
     )
@@ -57,7 +50,7 @@ $$;
 CREATE TABLE IF NOT EXISTS embedding_cache (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   input_text TEXT NOT NULL,
-  embedding vector(1536) NOT NULL,
+  embedding vector(1024) NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now(),
   last_accessed TIMESTAMPTZ DEFAULT now(),
   access_count INTEGER DEFAULT 1,
@@ -76,8 +69,8 @@ SECURITY DEFINER
 STABLE
 AS $$
 DECLARE
-  cached_vector vector(1536);
-  new_vector vector(1536);
+  cached_vector vector(1024);
+  new_vector vector(1024);
 BEGIN
   -- Try to get from cache
   SELECT embedding, 

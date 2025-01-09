@@ -45,7 +45,8 @@ export async function processMessages(
           ? msg.content 
           : msg.content 
             ? JSON.stringify(msg.content) 
-            : ''
+            : '',
+        metadata: msg.metadata
       });
     }
   });
@@ -66,7 +67,8 @@ export async function processMessages(
   }
 
   console.log('✅ [messageProcessor] Messages processed:', {
-    totalMessages: messages.length
+    totalMessages: messages.length,
+    firstMessageMetadata: messages[0].metadata
   });
 
   return messages;

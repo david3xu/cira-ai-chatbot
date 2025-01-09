@@ -79,4 +79,5 @@ export interface FormattedMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   type?: 'text' | 'image';
+  metadata?: Record<string, any>;
 }

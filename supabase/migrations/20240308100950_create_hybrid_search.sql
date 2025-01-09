@@ -11,37 +11,50 @@ CREATE OR REPLACE FUNCTION hybrid_search(
 RETURNS SETOF documents
 LANGUAGE sql
 AS $$
-WITH full_text AS (
+WITH ranked_chunks AS (
   SELECT
-    id,
-    ROW_NUMBER() OVER(ORDER BY ts_rank_cd(fts, websearch_to_tsquery(query_text)) DESC) AS rank_ix
+    dc.document_id,
+    ts_rank_cd(dc.fts, websearch_to_tsquery(query_text)) as text_rank,
+    dc.content_vector <#> query_embedding as semantic_distance
   FROM
-    documents
+    document_chunks dc
   WHERE
-    fts @@ websearch_to_tsquery(query_text)
-    AND domination_field = in_domination_field
+    dc.domination_field = in_domination_field
+    AND (
+      dc.fts @@ websearch_to_tsquery(query_text)
+      OR true  -- Include all for semantic search
+    )
+),
+full_text AS (
+  SELECT
+    document_id as id,
+    ROW_NUMBER() OVER (ORDER BY MAX(text_rank) DESC) as rank_ix
+  FROM
+    ranked_chunks
+  GROUP BY
+    document_id
   ORDER BY rank_ix
   LIMIT LEAST(match_count, 30) * 2
 ),
 semantic AS (
   SELECT
-    id,
-    ROW_NUMBER() OVER(ORDER BY content_vector <#> query_embedding) AS rank_ix
+    document_id as id,
+    ROW_NUMBER() OVER (ORDER BY MIN(semantic_distance)) as rank_ix
   FROM
-    documents
-  WHERE
-    domination_field = in_domination_field
+    ranked_chunks
+  GROUP BY
+    document_id
   ORDER BY rank_ix
   LIMIT LEAST(match_count, 30) * 2
 )
 SELECT
-  documents.*
+  d.*
 FROM
   full_text
   FULL OUTER JOIN semantic
     ON full_text.id = semantic.id
-  JOIN documents
-    ON COALESCE(full_text.id, semantic.id) = documents.id
+  JOIN documents d
+    ON COALESCE(full_text.id, semantic.id) = d.id
 ORDER BY
   COALESCE(1.0 / (rrf_k + full_text.rank_ix), 0.0) * full_text_weight +
   COALESCE(1.0 / (rrf_k + semantic.rank_ix), 0.0) * semantic_weight DESC

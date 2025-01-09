@@ -67,8 +67,12 @@ export async function POST(req: Request) {
           // Accumulate tokens
           accumulatedContent += token;
 
-          // Write accumulated content to stream
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ content: accumulatedContent })}\n\n`));
+          // Write accumulated content to stream with proper JSON formatting
+          const message = JSON.stringify({
+            content: accumulatedContent,
+            status: 'streaming'
+          });
+          await writer.write(encoder.encode(`data: ${message}\n\n`));
 
           // Update message in database periodically (optional)
           await supabase
@@ -102,7 +106,12 @@ export async function POST(req: Request) {
       }
 
       // Send final message with complete content
-      await writer.write(encoder.encode(`data: ${JSON.stringify({ content: accumulatedContent, chat_topic: response.chat_topic, status: 'success' })}\n\n`));
+      const finalMessage = JSON.stringify({
+        content: accumulatedContent,
+        chat_topic: response.chat_topic,
+        status: 'success'
+      });
+      await writer.write(encoder.encode(`data: ${finalMessage}\n\n`));
       await writer.close();
     }).catch(async (error) => {
       console.error('❌ Error processing request:', error);
@@ -115,8 +124,12 @@ export async function POST(req: Request) {
           .eq('message_pair_id', options.messagePairId);
       }
 
-      // Send error message
-      await writer.write(encoder.encode(`data: ${JSON.stringify({ error: error.message, status: 'failed' })}\n\n`));
+      // Send error message with proper JSON formatting
+      const errorMessage = JSON.stringify({
+        error: error.message,
+        status: 'failed'
+      });
+      await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
       await writer.close();
     });
 

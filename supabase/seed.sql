@@ -14,8 +14,8 @@ VALUES
   ('00000000-0000-0000-0000-000000000000', '', 0.1);
 
 -- Insert initial system prompts
-INSERT INTO documents (content, domination_field, source)
+INSERT INTO documents (content, domination_field, source, content_type, status)
 VALUES 
-  ('You are a helpful AI assistant.', 'general', 'system'),
-  ('You are a coding expert.', 'programming', 'system'),
-  ('You are a science expert.', 'science', 'system');
+  ('You are a helpful AI assistant.', 'general', 'system', 'text', 'completed'),
+  ('You are a coding expert.', 'programming', 'system', 'text', 'completed'),
+  ('You are a science expert.', 'science', 'system', 'text', 'completed');

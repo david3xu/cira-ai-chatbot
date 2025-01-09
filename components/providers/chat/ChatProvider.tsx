@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useReducer, useMemo, useRef, useEffect } from 'react'
-import { ChatContext } from './contexts'
+import { ChatContext } from '@/lib/features/chat/context/chatContext';
 import { ChatState, ChatAction, ChatMessage, Chat } from '@/lib/types/'
 import { initialChatState } from '@/lib/types/chat-state';
 import { chatReducer } from '@/lib/reducers/chatReducer';
@@ -82,14 +82,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         type: 'UPDATE_MESSAGE', 
         payload: { id: messageId, ...updates }
       });
-    }
+    },
+    toggleSidebar: () => {},
+    setTheme: () => {},
+    toggleSettings: () => {},
+    selectMessage: () => {},
+    toggleTheme: () => {},
+    setEditing: () => {},
+    setEditingMessage: () => {},
+    setInputFocus: () => {},
+    setInputHeight: () => {},
+    setScrollPosition: () => {},
+    setLoadingState: () => {},
+    startRequest: () => {},
+    endRequest: () => {},
+    setStreamingStatus: () => {}
   }), [state.chats]);
 
   return (
     <ChatContext.Provider value={{
       state,
       dispatch,
-      actions
+      actions,
+      error: state.error?.message || null,
+      isLoading: state.isLoading,
+      isProcessing: state.isProcessing || false
     }}>
       {children}
     </ChatContext.Provider>

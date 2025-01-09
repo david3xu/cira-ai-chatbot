@@ -1,15 +1,17 @@
 import { useCallback, useRef } from 'react'
-import { useChatContext } from './useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useChat } from './useChat'
 import { ChatService } from '@/lib/services/ChatService'
 import type { ChatMessage } from '@/lib/types'
 import { MessageStatus } from '@/lib/types/chat-message'
 import { batch } from 'react-redux'
 import { ChatError, ErrorCodes } from '@/lib/types/errors'
+import { usePersistentState } from '@/lib/hooks/state/usePersistentState'
 
 export function useChatMessage() {
   const { state, dispatch } = useChatContext()
   const { createChat } = useChat()
+  const { customPrompt, setCustomPrompt } = usePersistentState()
   const streamController = useRef<AbortController>()
   const chatLoadingRef = useRef<boolean>(false)
 
@@ -46,12 +48,20 @@ export function useChatMessage() {
           if (!isNewChat && finalDominationField) {
             localStorage.setItem('selectedDominationField', finalDominationField);
           }
+
+          // Determine which custom prompt to use
+          const chatPrompt = response.custom_prompt;
+          const persistentPrompt = customPrompt;
+          const finalPrompt = chatPrompt || persistentPrompt || null;
           
-          console.log('Loading chat with domination field:', {
+          console.log('Loading chat with domination field and custom prompt:', {
             chatField: response.domination_field,
             savedField: savedDomainField,
             isNewChat,
-            finalField: finalDominationField
+            finalField: finalDominationField,
+            chatPrompt,
+            persistentPrompt,
+            finalPrompt
           });
           
           // Batch state updates
@@ -60,14 +70,19 @@ export function useChatMessage() {
               type: 'SET_CURRENT_CHAT', 
               payload: {
                 ...response,
-                domination_field: finalDominationField
+                domination_field: finalDominationField,
+                custom_prompt: finalPrompt
               }
             });
             if (response.model) {
               dispatch({ type: 'SET_MODEL', payload: response.model });
             }
-            // Also update the domination field in the state
+            // Update the domination field in the state
             dispatch({ type: 'SET_DOMINATION_FIELD', payload: finalDominationField });
+            
+            // Always update custom prompt state to maintain consistency
+            dispatch({ type: 'SET_CUSTOM_PROMPT', payload: finalPrompt });
+            setCustomPrompt(finalPrompt);
           });
           
           return response;
@@ -86,7 +101,7 @@ export function useChatMessage() {
     } finally {
       chatLoadingRef.current = false;
     }
-  }, [dispatch]);
+  }, [dispatch, setCustomPrompt]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) {
@@ -101,7 +116,7 @@ export function useChatMessage() {
           model: state.selectedModel,
           title: 'New Chat',
           dominationField: state.dominationField || 'NORMAL_CHAT',
-          customPrompt: state.customPrompt ?? undefined
+          customPrompt: customPrompt ?? undefined
         })
         
         if (!newChat?.id) {
@@ -122,7 +137,7 @@ export function useChatMessage() {
       model: state.selectedModel,
       messageId,
       messagePairId,
-      customPrompt: state.customPrompt
+      customPrompt
     })
 
     const newMessage: ChatMessage = {
@@ -137,7 +152,8 @@ export function useChatMessage() {
       dominationField: state.dominationField || 'NORMAL_CHAT',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      status: 'sending'
+      status: 'sending',
+      customPrompt: customPrompt ?? undefined
     }
 
     // Add message to UI immediately
@@ -157,7 +173,7 @@ export function useChatMessage() {
         model: state.selectedModel,
         messagePairId,
         dominationField: state.dominationField,
-        customPrompt: state.customPrompt,
+        customPrompt: customPrompt ?? undefined,
         onMessage: (message) => {
           if (typeof message.assistantContent === 'string') {
             dispatch({ 
@@ -171,24 +187,20 @@ export function useChatMessage() {
           }
         },
         onError: (error) => {
-          console.error('🔍 [useChatMessage] Message error:', {
-            messageId,
-            messagePairId,
-            error
-          });
+          console.error('Message error:', error)
           dispatch({
             type: 'UPDATE_MESSAGE',
             payload: {
               id: messageId,
               status: 'failed'
             }
-          });
+          })
         },
         onChatUpdate: (chat) => {
           dispatch({
             type: 'UPDATE_CHAT',
             payload: chat
-          });
+          })
         }
       })
 
@@ -209,7 +221,7 @@ export function useChatMessage() {
       dispatch({ type: 'SET_STREAMING', payload: false })
       dispatch({ type: 'SET_STREAMING_MESSAGE_ID', payload: null })
     }
-  }, [state.currentChat, state.selectedModel, state.dominationField, state.customPrompt, createChat, dispatch])
+  }, [state.currentChat, state.selectedModel, state.dominationField, customPrompt, createChat, dispatch])
 
   const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>) => {
     dispatch({

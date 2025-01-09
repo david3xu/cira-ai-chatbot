@@ -19,7 +19,7 @@ import { performHybridSearch } from '@/lib/features/ai/utils/embedding';
 import { structureResponse } from '@/lib/features/ai/utils/responseFormatter';
 import { processMessages } from '../services/messageProcessor';
 import { createCompletion } from '../services/completionService';
-import { getContextualPrompt } from '../prompts/systemMessages';
+import { getContextualPrompt, getSystemMessage, formatConversationByDomain } from '../prompts/systemMessages';
 import { ChatMessage } from '@/lib/types';
 import { DOMINATION_FIELDS, DominationField } from '../config/constants';
 
@@ -75,12 +75,13 @@ async function generateChatTopic(
 }
 
 export async function answerQuestion(options: AnswerQuestionOptions): Promise<AnswerQuestionResponse> {
+
   const {
     messages,
     onToken,
-    dominationField = DOMINATION_FIELDS.NORMAL_CHAT,
+    dominationField,
+    customPrompt,
     chatId,
-    customPrompt = null,
     model
   } = options;
 
@@ -90,15 +91,10 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     chatId,
     messageCount: messages.length,
     hasCustomPrompt: !!customPrompt,
-    customPromptPreview: customPrompt ? `${customPrompt.slice(0, 50)}...` : null
+    customPromptPreview: customPrompt
   });
 
   try {
-    console.log('🔍 [answerQuestion] Processing with model and field:', {
-      model,
-      dominationField,
-      latestMessageLength: messages[messages.length - 1]?.userContent.length
-    });
 
     // Get the latest user message content, ensure it's not null
     const latestUserContent = messages[messages.length - 1]?.userContent;
@@ -111,32 +107,26 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       .map(msg => {
         const userContent = msg.userContent || '';
         const assistantContent = msg.assistantContent || '';
-        
-        console.log('🔄 [answerQuestion] Formatting message with domination field:', dominationField);
-        
-        switch (dominationField) {
-          case DOMINATION_FIELDS.EMAIL:
-            return `Email ${msg.userRole}: ${userContent}\nResponse: ${assistantContent}`;
-          case DOMINATION_FIELDS.RUBIN:
-            return `Observer: ${userContent}\nAstronomer: ${assistantContent}`;
-          case DOMINATION_FIELDS.PROGRAMMING:
-            return `Question: ${userContent}\nProgrammer: ${assistantContent}`;
-          case DOMINATION_FIELDS.DATA_MINING:
-            return `Query: ${userContent}\nAnalyst: ${assistantContent}`;
-          case DOMINATION_FIELDS.DSA:
-            return `Problem: ${userContent}\nSolution: ${assistantContent}`;
-          case DOMINATION_FIELDS.NORMAL_CHAT:
-          default:
-            return `${msg.userRole}: ${userContent}\n${msg.assistantRole}: ${assistantContent}`;
-        }
+        return formatConversationByDomain(
+          dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
+          userContent,
+          assistantContent
+        );
       })
       .join('\n');
 
     // Get context for hybrid search if needed
     let contextText = '';
-    if (dominationField !== DOMINATION_FIELDS.NORMAL_CHAT) {
+    if (dominationField && dominationField !== DOMINATION_FIELDS.NORMAL_CHAT) {
       try {
-        const searchResults = await performHybridSearch(latestUserContent, dominationField);
+        const searchResults = await performHybridSearch(
+          latestUserContent,
+          dominationField,
+          5, // match_count
+          1.0, // full_text_weight
+          1.0, // semantic_weight
+          50 // rrf_k
+        );
         contextText = searchResults.map(doc => doc.content).join('\n');
       } catch (error) {
         console.warn('Warning: Hybrid search failed, continuing without context:', error);
@@ -144,44 +134,33 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       }
     }
 
-    // Create the system message with all required parameters
-    const systemMessage = getContextualPrompt(
-      dominationField,
-      previousConvo,
-      latestUserContent,
+    console.log('🔍 [answerQuestion] Context text:', {
       contextText,
-      customPrompt
-    );
-
-    console.log('📝 [answerQuestion] Created system message:', {
       dominationField,
-      messageLength: systemMessage.length,
-      hasCustomPrompt: !!customPrompt,
-      customPromptLength: customPrompt?.length || 0,
-      systemMessagePreview: `${systemMessage.slice(0, 100)}...`
+      customPrompt
     });
 
-    // Process messages for context
+    // Get the base system message - only use custom prompt here
+    const systemMessage = getSystemMessage(dominationField || DOMINATION_FIELDS.NORMAL_CHAT, customPrompt);
+
+    // Create the contextual prompt - don't pass custom prompt since it's in system message
+    const prompt = getContextualPrompt(
+      dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
+      previousConvo,
+      latestUserContent,
+      contextText
+    );
+
+    // Process messages for context - don't pass custom prompt since it's in system message
     const processedMessages = await processMessages(
       messages,
       latestUserContent,
       systemMessage
     );
 
-    console.log('✅ [answerQuestion] Messages processed:', {
-      processedMessageCount: processedMessages.length,
-      firstMessagePreview: processedMessages[0] ? `${processedMessages[0].content.slice(0, 50)}...` : null
-    });
-
     // Create completion with proper error handling
     let fullResponse = '';
     try {
-      console.log('🔍 [answerQuestion] Calling createCompletion:', {
-        model,
-        dominationField,
-        processedMessageCount: processedMessages.length,
-        customPromptUsed: !!customPrompt
-      });
 
       fullResponse = await createCompletion(
         processedMessages,
@@ -190,8 +169,12 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       );
       
       if (!fullResponse?.trim()) {
-        console.log('Empty response, retrying...');
-        const retryPrompt = getDomainSpecificRetryPrompt(dominationField, latestUserContent);
+        const retryPrompt = getContextualPrompt(
+          dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
+          '', // empty previous convo for retry
+          latestUserContent,
+          contextText
+        );
         fullResponse = await createCompletion(
           [{ role: 'user', content: retryPrompt }],
           model || 'default',
@@ -215,34 +198,10 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
       chat_topic
     };
 
-    console.log('✨ Generated response:', {
-      responseLength: structuredResponse.content.length,
-      hasChatTopic: !!chat_topic,
-      chatTopic: chat_topic
-    });
-
     return structuredResponse;
 
   } catch (error) {
     console.error('Error in answerQuestion:', error);
     throw error;
-  }
-}
-
-function getDomainSpecificRetryPrompt(dominationField: DominationField, message: string): string {
-  switch (dominationField) {
-    case DOMINATION_FIELDS.EMAIL:
-      return `Please compose a professional email response to: ${message}`;
-    case DOMINATION_FIELDS.RUBIN:
-      return `As an astronomer at Rubin Observatory, please answer this question: ${message}`;
-    case DOMINATION_FIELDS.PROGRAMMING:
-      return `As a programming language expert, please explain: ${message}`;
-    case DOMINATION_FIELDS.DATA_MINING:
-      return `As a data mining specialist, please analyze: ${message}`;
-    case DOMINATION_FIELDS.DSA:
-      return `As an algorithms expert, please solve: ${message}`;
-    case DOMINATION_FIELDS.NORMAL_CHAT:
-    default:
-      return `Please answer this question clearly and directly: ${message}`;
   }
 } 

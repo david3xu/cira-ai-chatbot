@@ -135,23 +135,20 @@ export type Database = {
           },
         ]
       }
-      documents: {
+      document_chunks: {
         Row: {
           author: string | null
           content: string
           content_vector: string | null
           created_at: string | null
           document_id: string | null
-          domination_field: string
+          domination_field: string | null
           fts: unknown | null
           id: string
           metadata: Json | null
-          relevance_score: number | null
           source: string | null
-          source_id: string | null
           updated_at: string | null
           url: string | null
-          view_count: number | null
         }
         Insert: {
           author?: string | null
@@ -159,16 +156,13 @@ export type Database = {
           content_vector?: string | null
           created_at?: string | null
           document_id?: string | null
-          domination_field: string
+          domination_field?: string | null
           fts?: unknown | null
           id?: string
           metadata?: Json | null
-          relevance_score?: number | null
           source?: string | null
-          source_id?: string | null
           updated_at?: string | null
           url?: string | null
-          view_count?: number | null
         }
         Update: {
           author?: string | null
@@ -176,13 +170,72 @@ export type Database = {
           content_vector?: string | null
           created_at?: string | null
           document_id?: string | null
-          domination_field?: string
+          domination_field?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          source?: string | null
+          updated_at?: string | null
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          author: string | null
+          content: string | null
+          content_type: string
+          created_at: string | null
+          domination_field: string | null
+          fts: unknown | null
+          id: string
+          metadata: Json | null
+          relevance_score: number | null
+          source: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          url: string | null
+          view_count: number | null
+        }
+        Insert: {
+          author?: string | null
+          content?: string | null
+          content_type: string
+          created_at?: string | null
+          domination_field?: string | null
           fts?: unknown | null
           id?: string
           metadata?: Json | null
           relevance_score?: number | null
           source?: string | null
-          source_id?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          url?: string | null
+          view_count?: number | null
+        }
+        Update: {
+          author?: string | null
+          content?: string | null
+          content_type?: string
+          created_at?: string | null
+          domination_field?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          relevance_score?: number | null
+          source?: string | null
+          status?: string | null
+          title?: string | null
           updated_at?: string | null
           url?: string | null
           view_count?: number | null
@@ -470,6 +523,8 @@ export type Database = {
           p_model: string
           p_chat_id: string
           p_domination_field?: string
+          p_custom_prompt?: string
+          p_chat_topic?: string
         }
         Returns: {
           assistant_content: string | null
@@ -715,25 +770,26 @@ export type Database = {
         }
         Returns: {
           author: string | null
-          content: string
-          content_vector: string | null
+          content: string | null
+          content_type: string
           created_at: string | null
-          document_id: string | null
-          domination_field: string
+          domination_field: string | null
           fts: unknown | null
           id: string
           metadata: Json | null
           relevance_score: number | null
           source: string | null
-          source_id: string | null
+          status: string | null
+          title: string | null
           updated_at: string | null
           url: string | null
           view_count: number | null
         }[]
       }
-      index_document: {
+      index_document_chunk: {
         Args: {
           p_content: string
+          p_document_id: string
           p_metadata?: Json
         }
         Returns: string

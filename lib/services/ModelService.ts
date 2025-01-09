@@ -13,7 +13,7 @@ export class ModelService extends ApiService {
       }>;
     }>('/api/ai/models');
     
-    console.log('API Response:', response); // Debug log
+    // console.log('API Response:', response); // Debug log
     
     if (!response?.data) {
       console.warn('No models found in response');

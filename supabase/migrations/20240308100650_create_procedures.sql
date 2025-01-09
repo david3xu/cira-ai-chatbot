@@ -6,7 +6,9 @@ CREATE OR REPLACE FUNCTION create_message_pair(
   p_content TEXT,
   p_model TEXT,
   p_chat_id UUID,
-  p_domination_field TEXT DEFAULT 'general'
+  p_domination_field TEXT DEFAULT 'general',
+  p_custom_prompt TEXT DEFAULT NULL,
+  p_chat_topic TEXT DEFAULT NULL
 ) RETURNS SETOF chat_history
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -34,7 +36,9 @@ BEGIN
       assistant_role,
       status,
       model,
-      domination_field
+      domination_field,
+      custom_prompt,
+      chat_topic
     ) VALUES (
       p_message_pair_id,
       p_chat_id,
@@ -44,7 +48,9 @@ BEGIN
       'assistant',
       'sending',
       p_model,
-      p_domination_field
+      p_domination_field,
+      p_custom_prompt,
+      p_chat_topic
     )
     RETURNING * INTO v_result;
   

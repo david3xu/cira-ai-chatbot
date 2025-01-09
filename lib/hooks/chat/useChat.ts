@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useChatContext } from './useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useChatAPI } from '@/lib/hooks/chat/useChatAPI'
 import { ChatService } from '@/lib/services/ChatService'
 import type { ChatOptions, ChatMessage } from '@/lib/types'
@@ -23,6 +23,7 @@ export function useChat() {
     });
 
     try {
+      // Use custom prompt from options or state
       const customPrompt = options.customPrompt || state.customPrompt || undefined;
       console.log('🏗️ [useChat] Using custom prompt:', {
         fromOptions: options.customPrompt,

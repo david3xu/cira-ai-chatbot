@@ -1,4 +1,4 @@
-import { useChatContext } from './chat/useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 
 export function useLoading() {
   const { state } = useChatContext()

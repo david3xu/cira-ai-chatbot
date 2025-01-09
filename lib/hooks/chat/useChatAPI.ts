@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useChatContext } from './useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { ChatService } from '@/lib/services/ChatService'
 import type { Chat, ChatMessage, ChatOptions } from '@/lib/types'
 

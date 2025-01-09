@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useReducer, useMemo, useEffect, useCallback } from 'react'
-import { ChatUIContext } from './contexts'
+import { ChatUIContext } from '@/lib/features/chat/context/chatContext';
 import { ChatUIState } from '@/lib/types'
 import { UIAction } from '@/lib/types'
 import { ChatMessage } from '@/lib/types'

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { DEFAULT_PROMPT } from '@/lib/features/ai/config/constants';
 
 // Use environment variables
 const DEFAULT_USER_ID = process.env.NEXT_PUBLIC_DEFAULT_USER_ID;
-const DEFAULT_PROMPT = "You are a helpful AI assistant. Answer questions accurately and concisely.";
 
 export async function POST(req: Request) {
   try {

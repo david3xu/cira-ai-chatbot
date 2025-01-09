@@ -44,17 +44,17 @@ export const ModelSelector = memo(function ModelSelector() {
   );
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="px-4 h-[60px] flex items-center gap-2">
       <Select 
         value={selectValue}
         onValueChange={handleModelChange}
       >
-        <SelectTrigger className="w-[200px]">
+        <SelectTrigger className="w-[200px] bg-gray-800 text-white border-gray-700">
           <SelectValue placeholder="Select a model...">
             {selectValue || 'Select a model...'}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="bg-gray-800 border-gray-700">
           {modelItems}
         </SelectContent>
       </Select>

@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useReducer, useRef, useMemo } from 'react';
-import { useChat } from '@/lib/hooks/chat/useChat';
-import { ChatDomainContext } from './contexts';
+import { ChatDomainContext } from '@/lib/features/chat/context/chatContext';
 import type { ChatDomainState, ChatDomainAction, ChatDomainContextValue } from '@/lib/types/chat-domain-state';
-import { ChatService } from '@/lib/services/ChatService';
 import { usePersistentState } from '@/lib/hooks/state/usePersistentState';
 
 const getInitialState = (): ChatDomainState => {
@@ -14,7 +12,6 @@ const getInitialState = (): ChatDomainState => {
     const storedField = localStorage.getItem('selectedDominationField');
     if (storedField) {
       savedDomainField = storedField;
-      console.log('🔄 [ChatDomainProvider] Restored domination field from localStorage:', storedField);
     }
   }
 
@@ -43,10 +40,10 @@ export function ChatDomainProvider({ children }: { children: React.ReactNode }) 
   const [state, dispatch] = useReducer((state: ChatDomainState, action: ChatDomainAction): ChatDomainState => {
     switch (action.type) {
       case 'SET_DOMINATION_FIELD':
-        console.log('🔄 [ChatDomainProvider] Setting domination field:', {
-          current: state.dominationField,
-          new: action.payload
-        });
+        // console.log('🔄 [ChatDomainProvider] Setting domination field:', {
+        //   current: state.dominationField,
+        //   new: action.payload
+        // });
         
         if (typeof window !== 'undefined') {
           localStorage.setItem('selectedDominationField', action.payload);

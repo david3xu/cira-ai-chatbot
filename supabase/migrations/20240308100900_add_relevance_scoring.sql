@@ -27,10 +27,10 @@ LANGUAGE sql
 AS $$
 WITH full_text AS (
   SELECT
-    id,
+    document_id as id,
     ROW_NUMBER() OVER(ORDER BY ts_rank_cd(fts, websearch_to_tsquery(query_text)) DESC) AS rank_ix
   FROM
-    documents
+    document_chunks
   WHERE
     fts @@ websearch_to_tsquery(query_text)
     AND domination_field = in_domination_field
@@ -39,10 +39,10 @@ WITH full_text AS (
 ),
 semantic AS (
   SELECT
-    id,
+    document_id as id,
     ROW_NUMBER() OVER(ORDER BY content_vector <#> query_embedding) AS rank_ix
   FROM
-    documents
+    document_chunks
   WHERE
     domination_field = in_domination_field
   ORDER BY rank_ix

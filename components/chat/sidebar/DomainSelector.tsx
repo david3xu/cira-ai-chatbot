@@ -16,17 +16,14 @@ export const DomainSelector = memo(function DomainSelector() {
   }, [state.dominationField, actions]);
 
   return (
-    <div className="p-4">
-      <label className="block text-sm font-medium text-gray-200 mb-2">
-        Domain
-      </label>
+    <div className="px-4 h-[60px] flex items-center">
       <Select value={state.dominationField} onValueChange={handleDomainChange}>
         <SelectTrigger className="w-full bg-gray-800 text-white border-gray-700">
           <SelectValue placeholder="Select a domain" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="bg-gray-800 border-gray-700">
           {Object.values(DOMINATION_FIELDS).map((value) => (
-            <SelectItem key={value} value={value} className="text-white hover:bg-gray-700">
+            <SelectItem key={value} value={value} className="text-white hover:bg-gray-700 cursor-pointer">
               {value}
             </SelectItem>
           ))}

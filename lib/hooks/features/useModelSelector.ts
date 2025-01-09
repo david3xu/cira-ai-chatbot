@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useContext } from 'react'
 import { useLoadingActions } from '../state/useLoadingActions'
 import { ModelService } from '@/lib/services/ModelService'
-import { ChatDomainContext } from '@/components/providers/chat/contexts'
+import { ChatDomainContext } from '@/lib/features/chat/context/chatContext'
 
 type Model = { id: string };
 

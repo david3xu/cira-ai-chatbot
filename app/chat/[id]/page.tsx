@@ -8,7 +8,7 @@ import { ChatContainer } from '@/components/chat/conversation/ChatContainer';
 import { useChatMessage } from '@/lib/hooks/chat/useChatMessage';
 import { DOMINATION_FIELDS, isValidDominationField } from '@/lib/features/ai/config/constants';
 import { ChatError, ErrorCodes } from '@/lib/types/errors';
-import { useChatContext } from '@/lib/hooks/chat/useChatContext';
+import { useChatContext } from '@/lib/features/chat/context/chatContext';
 import { ChatService } from '@/lib/services/ChatService';
 
 // Configure dynamic routes

@@ -16,10 +16,16 @@
 import { openai } from '../config/openai';
 import { retryWithBackoff } from './retry';
 import { EmbeddingService } from '@/lib/features/ai/services/embeddingService';
+import { supabase } from '@/lib/supabase/client';
 
 interface SearchResult {
   content: string;
   score: number;
+}
+
+interface Document {
+  content: string | null;
+  similarity?: number;
 }
 
 export async function getEmbedding(text: string | null): Promise<number[]> {
@@ -40,7 +46,11 @@ export async function getEmbedding(text: string | null): Promise<number[]> {
 
 export async function performHybridSearch(
   query: string | null,
-  dominationField: string
+  dominationField: string,
+  matchCount: number = 5,
+  fullTextWeight: number = 1.0,
+  semanticWeight: number = 1.0,
+  rrfK: number = 50
 ): Promise<SearchResult[]> {
   if (!query) {
     throw new Error('Query is required for hybrid search');
@@ -49,15 +59,29 @@ export async function performHybridSearch(
   try {
     const queryEmbedding = await getEmbedding(query);
     
-    // Here you would typically:
-    // 1. Get embeddings from your vector database
-    // 2. Perform similarity search
-    // 3. Return the most relevant results
-    
-    return [{
-      content: `Search result for query "${query}" in domain "${dominationField}"`,
-      score: 0.95
-    }];
+    const { data: documents, error } = await supabase.rpc('hybrid_search', {
+      query_text: query,
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      match_count: matchCount,
+      full_text_weight: fullTextWeight,
+      semantic_weight: semanticWeight,
+      rrf_k: rrfK,
+      in_domination_field: dominationField
+    });
+
+    if (error) {
+      console.error('Error in hybrid search:', error);
+      throw error;
+    }
+
+    if (!documents || documents.length === 0) {
+      return [];
+    }
+
+    return documents.map((doc: Document) => ({
+      content: doc.content || '',
+      score: doc.similarity || 0
+    }));
   } catch (error) {
     console.error('Error in hybrid search:', error);
     throw error;

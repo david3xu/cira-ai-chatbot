@@ -84,4 +84,6 @@ export interface ChatStreamOptions {
 export type APIAction = 
   | { type: 'START_REQUEST'; payload: string }
   | { type: 'END_REQUEST'; payload: string }
-  | { type: 'SET_STREAMING_STATUS'; payload: 'idle' | 'streaming' | 'complete' }; 
+  | { type: 'SET_STREAMING_STATUS'; payload: 'idle' | 'streaming' | 'complete' }
+  | { type: 'SET_ERROR'; payload: Error | null }
+  | { type: 'SET_LOADING'; payload: boolean }; 

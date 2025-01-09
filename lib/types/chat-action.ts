@@ -31,5 +31,10 @@ export type ChatAction =
   | { type: 'UPDATE_STREAMING_CONTENT'; payload: string }
   | { type: 'SET_STREAMING_MESSAGE'; payload: string }
   | { type: 'SET_STREAMING'; payload: boolean }
+  | { type: 'SET_STREAMING_STATUS'; payload: 'idle' | 'streaming' | 'complete' }
   | { type: 'STREAM_EVENT'; payload: { messageId: string; event: StreamEvent } }
+  
+  // API Request Management
+  | { type: 'ADD_PENDING_REQUEST'; payload: string }
+  | { type: 'REMOVE_PENDING_REQUEST'; payload: string }
   | { type: 'SET_MESSAGE_STATUS'; payload: { messageId: string; status: MessageStatus } }; 

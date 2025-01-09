@@ -49,22 +49,28 @@ export class EmbeddingService {
     model: string
   ): Promise<EmbeddingResponse> {
     const ollamaUrl = process.env.NEXT_PUBLIC_OLLAMA_SERVER_URL || 'http://localhost:11434';
-    const response = await fetch(`${ollamaUrl}/api/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: inputs[0], // Ollama currently supports single input
-        model: `${model}:latest`
-      })
-    });
+    
+    // Process all inputs in parallel
+    const embeddings = await Promise.all(inputs.map(async (input) => {
+      const response = await fetch(`${ollamaUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: input,
+          model: `${model}:latest`
+        })
+      });
 
-    if (!response.ok) {
-      throw new Error('Ollama embedding request failed');
-    }
+      if (!response.ok) {
+        throw new Error('Ollama embedding request failed');
+      }
 
-    const data = await response.json();
+      const data = await response.json();
+      return data.embedding;
+    }));
+
     return {
-      embeddings: [data.embedding],
+      embeddings,
       model,
     };
   }

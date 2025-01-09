@@ -23,33 +23,46 @@ export const AI_CONSTANTS = {
   EMBEDDING_MODEL: 'mxbai-embed-large:latest'
 };
 
-// Combined domination fields definition
-export const DOMINATION_FIELDS = {
-  RUBIN: 'Rubin Observation',
-  NORMAL_CHAT: 'General',
-  PROGRAMMING: 'Programming Languages',
-  DATA_MINING: 'Data Mining',
-  DSA: 'Data Structures and Algorithms',
-  EMAIL: 'Email',
-  CYBERSECURITY: 'Cybersecurity',
-  NETWORKING: 'Networking',
-  CLOUD: 'Cloud',
-  DEVOPS: 'DevOps'
+export const DEFAULT_PROMPT = "You are a helpful AI assistant. Answer questions accurately and concisely.";
+
+export type DominationField = 
+  | 'NORMAL_CHAT'
+  | 'PROGRAMMING'
+  | 'DATA_MINING'
+  | 'DSA'
+  | 'EMAIL'
+  | 'RUBIN'
+  | 'DOCUMENT';
+
+export const DOMINATION_FIELDS: Record<string, DominationField> = {
+  NORMAL_CHAT: 'NORMAL_CHAT',
+  PROGRAMMING: 'PROGRAMMING',
+  DATA_MINING: 'DATA_MINING',
+  DSA: 'DSA',
+  EMAIL: 'EMAIL',
+  RUBIN: 'RUBIN',
+  DOCUMENT: 'DOCUMENT'
 } as const;
 
 export const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000000';
-
-// Type for domination fields
-export type DominationField = typeof DOMINATION_FIELDS[keyof typeof DOMINATION_FIELDS];
 
 // Helper function to validate domination field
 export function isValidDominationField(field: string): field is DominationField {
   return Object.values(DOMINATION_FIELDS).includes(field as DominationField);
 }
 
-// Helper function to get domination field options for UI
-export const getDominationFieldOptions = () => 
-  Object.values(DOMINATION_FIELDS).map(value => ({
-    value,
-    label: value
-  }));
+// UI-friendly version of domination fields with labels
+export interface DomainFieldOption {
+  value: DominationField;
+  label: string;
+}
+
+export const getDomainFieldOptions = (): DomainFieldOption[] => [
+  { value: 'NORMAL_CHAT', label: 'Normal Chat' },
+  { value: 'PROGRAMMING', label: 'Programming' },
+  { value: 'DATA_MINING', label: 'Data Mining' },
+  { value: 'DSA', label: 'Data Structures & Algorithms' },
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'RUBIN', label: 'Rubin' },
+  { value: 'DOCUMENT', label: 'Document' }
+];

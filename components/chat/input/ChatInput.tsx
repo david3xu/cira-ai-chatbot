@@ -1,22 +1,29 @@
 "use client";
 
 import React, { useState, useCallback, memo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useChatMessage } from '@/lib/hooks/chat/useChatMessage';
-import { useChatContext } from '@/lib/hooks/chat/useChatContext';
+import { useChatContext } from '@/lib/features/chat/context/chatContext';
 import { useDomainContext } from '@/lib/hooks/domain/useDomainContext';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils/utils';
-import type { ChatOptions, Chat } from '@/lib/types';
+import type { ChatOptions, Chat, ChatMessage } from '@/lib/types';
+
+interface APIResponse<T> {
+  data: T | null;
+  error: { message: string; status: number; } | null;
+}
 
 interface ChatInputProps {
-  onCreateChat: (options: ChatOptions) => Promise<void>;
+  onCreateChat: (options: ChatOptions) => Promise<APIResponse<Chat>>;
 }
 
 export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProps) {
+  const router = useRouter();
   const [content, setContent] = useState('');
   const [isSending, setIsSending] = useState(false);
   const { sendMessage } = useChatMessage();
-  const { state } = useChatContext();
+  const { state, dispatch } = useChatContext();
   const domainContext = useDomainContext();
   const { isStreaming } = state;
   const currentChat: Chat | null = state.currentChat;
@@ -31,24 +38,106 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
     try {
       setIsSending(true);
       
-      if (!currentChat) {
+      let chatToUse = currentChat;
+      
+      if (!chatToUse) {
         const newChatOptions = {
-          model: domainContext.state.selectedModel,
+          model: domainContext.state.selectedModel || 'llava:latest',
           name: 'New Chat',
-          dominationField: domainContext.state.dominationField,
-          customPrompt: state.customPrompt || undefined
+          dominationField: domainContext.state.dominationField || 'NORMAL_CHAT',
+          customPrompt: state.customPrompt || undefined,
+          hasCustomPrompt: !!state.customPrompt
         };
         
-        await onCreateChat(newChatOptions);
-        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          const response = await onCreateChat(newChatOptions);
+          
+          if (response?.error) {
+            console.error('ChatInput: API error:', response.error);
+            throw new Error(response.error.message || 'Failed to create new chat');
+          }
+          
+          const apiResponse = response?.data as unknown as {
+            chatId: string;
+            model: string;
+            dominationField: string;
+            hasCustomPrompt: boolean;
+          };
+          
+          if (!apiResponse?.chatId) {
+            console.error('ChatInput: Invalid chat response:', apiResponse);
+            throw new Error('Failed to create new chat: Missing chat ID');
+          }
+          
+          // Create chat object matching the NewChatButton format
+          chatToUse = {
+            id: apiResponse.chatId,
+            name: newChatOptions.name,
+            model: apiResponse.model,
+            domination_field: apiResponse.dominationField,
+            custom_prompt: null,
+            metadata: {},
+            messages: [],
+            userId: '',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          } as Chat;
+          
+          // Store the domination field in localStorage (matching NewChatButton)
+          localStorage.setItem('selectedDominationField', newChatOptions.dominationField);
+          
+          // Update chat context
+          dispatch({ type: 'INITIALIZE_CHAT', payload: chatToUse });
+          dispatch({ type: 'SET_CURRENT_CHAT', payload: chatToUse });
+          
+          // Update domination field in context (matching NewChatButton)
+          dispatch({ type: 'SET_DOMINATION_FIELD', payload: newChatOptions.dominationField });
+          
+          console.log('ChatInput: Chat created successfully:', {
+            id: chatToUse.id,
+            model: chatToUse.model,
+            dominationField: chatToUse.domination_field
+          });
+          
+          // Create initial message
+          const initialMessage = {
+            id: crypto.randomUUID(),
+            chatId: chatToUse.id,
+            messagePairId: crypto.randomUUID(),
+            userContent: messageContent,
+            assistantContent: '',
+            userRole: 'user',
+            assistantRole: 'assistant',
+            status: 'sending',
+            model: chatToUse.model,
+            dominationField: chatToUse.domination_field,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            metadata: {}
+          } as ChatMessage;
+          
+          // Add message to chat
+          dispatch({ 
+            type: 'ADD_MESSAGE', 
+            payload: { 
+              message: initialMessage,
+              shouldCreateChat: false
+            }
+          });
+          
+          // Navigate to chat page
+          router.push(`/chat/${chatToUse.id}`);
+          
+          // Send message after navigation
+          await sendMessage(messageContent);
+        } catch (error) {
+          console.error('ChatInput: Failed to create chat:', error);
+          throw error;
+        }
+      } else {
+        // If chat already exists, just send the message
+        await sendMessage(messageContent);
       }
-    
-      const activeChat = state.currentChat;
-      if (!activeChat?.id) {
-        throw new Error('No active chat found');
-      }
-      
-      await sendMessage(messageContent);
     } catch (error) {
       console.error('ChatInput: Failed to send message:', error);
       setContent(messageContent);
@@ -56,8 +145,7 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
       setIsSending(false);
     }
   }, [content, isStreaming, isSending, currentChat, domainContext.state.selectedModel, 
-      domainContext.state.dominationField, state.customPrompt, state.currentChat, 
-      onCreateChat, sendMessage]);
+      domainContext.state.dominationField, state.customPrompt, onCreateChat, sendMessage, dispatch, router]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

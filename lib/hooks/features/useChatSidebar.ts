@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from 'react'
-import { useChatContext } from '@/lib/hooks/chat/useChatContext'
+import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useChatUI } from '../ui/useChatUI'
 import { useLoadingActions } from '@/lib/hooks/state/useLoadingActions'
 import type { Chat } from '@/lib/types'
 import { useContext } from 'react'
-import { ChatDomainContext } from '@/components/providers/chat/contexts'
+import { ChatDomainContext } from '@/lib/features/chat/context/chatContext'
 import { DominationField } from '@/lib/features/ai/config/constants'
 
 interface SidebarState {
