@@ -1,4 +1,5 @@
 import { ChatTableRow, ChatMessageTableRow } from './database';
+import { ChatAction } from './chat-action';
 
 // Application interface extending the database type
 export interface Chat {
@@ -57,15 +58,17 @@ export interface ChatUpdate {
 }
 
 export interface ChatStreamOptions {
-  model?: string;
-  messagePairId?: string;
   chatId?: string;
+  messagePairId?: string;
+  model?: string;
   dominationField?: string;
-  customPrompt?: string | null;
+  customPrompt?: string;
+  chatTopic?: string;
   metadata?: Record<string, any>;
   onMessage?: (message: ChatMessage) => void;
   onError?: (error: Error) => void;
-  onChatUpdate?: (chat: Chat) => void;
+  onChatUpdate?: (update: Chat | ChatAction) => void;
+  onProgress?: (progress: number) => void;
 }
 
 export interface ChatOptions {

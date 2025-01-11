@@ -1,6 +1,6 @@
 "use client"
 
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { ChatMessage } from '@/lib/types';
 import { MessageItem } from './MessageItem';
 
@@ -19,23 +19,35 @@ export const MessageList = memo(function MessageList({
   onDelete,
   onEdit 
 }: MessageListProps) {
-  return (
-    <div className="space-y-4">
-      {messages.map((message) => (
-        <MessageItem 
-          key={message.id} 
-          message={message}
-          onDelete={onDelete}
-          onEdit={onEdit}
-        />
-      ))}
-      {isStreaming && streamingMessage && (
+  // Memoize the message list to prevent unnecessary re-renders
+  const messageList = useMemo(() => {
+    const list = messages.map((message) => (
+      <MessageItem 
+        key={message.id} 
+        message={message}
+        onDelete={onDelete}
+        onEdit={onEdit}
+        isStreaming={message.status === 'streaming'}
+      />
+    ));
+
+    // Only add streaming message if it has content
+    if (isStreaming && streamingMessage && streamingMessage.assistantContent?.trim()) {
+      list.push(
         <MessageItem 
           key="streaming" 
           message={streamingMessage} 
           isStreaming={true}
         />
-      )}
+      );
+    }
+
+    return list;
+  }, [messages, isStreaming, streamingMessage, onDelete, onEdit]);
+
+  return (
+    <div className="space-y-4">
+      {messageList}
     </div>
   );
 }); 

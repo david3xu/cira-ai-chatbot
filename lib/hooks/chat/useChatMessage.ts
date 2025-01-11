@@ -1,10 +1,9 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useMemo } from 'react'
 import { useChatContext } from '@/lib/features/chat/context/chatContext'
 import { useChat } from './useChat'
 import { ChatService } from '@/lib/services/ChatService'
 import type { ChatMessage } from '@/lib/types'
 import { MessageStatus } from '@/lib/types/chat-message'
-import { batch } from 'react-redux'
 import { ChatError, ErrorCodes } from '@/lib/types/errors'
 import { usePersistentState } from '@/lib/hooks/state/usePersistentState'
 
@@ -14,11 +13,32 @@ export function useChatMessage() {
   const { customPrompt, setCustomPrompt } = usePersistentState()
   const streamController = useRef<AbortController>()
   const chatLoadingRef = useRef<boolean>(false)
+  const lastMessageRef = useRef<string | null>(null)
+
+  const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>) => {
+    if (!state.currentChat?.messages) return
+
+    // Only update if content has changed and is not null/undefined
+    if (updates.assistantContent === lastMessageRef.current || 
+        updates.assistantContent === undefined || 
+        updates.assistantContent === null) return
+    lastMessageRef.current = updates.assistantContent
+
+    // Batch updates to prevent multiple re-renders
+    dispatch({
+      type: 'UPDATE_MESSAGE',
+      payload: {
+        id: messageId,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+        status: updates.status || 'success'
+      }
+    })
+  }, [dispatch, state.currentChat?.messages])
 
   const loadChat = useCallback(async (chatId: string) => {
     if (!chatId) return;
     if (chatLoadingRef.current) {
-      console.log('Chat loading already in progress');
       return;
     }
     
@@ -54,42 +74,29 @@ export function useChatMessage() {
           const persistentPrompt = customPrompt;
           const finalPrompt = chatPrompt || persistentPrompt || null;
           
-          console.log('Loading chat with domination field and custom prompt:', {
-            chatField: response.domination_field,
-            savedField: savedDomainField,
-            isNewChat,
-            finalField: finalDominationField,
-            chatPrompt,
-            persistentPrompt,
-            finalPrompt
-          });
-          
           // Batch state updates
-          batch(() => {
-            dispatch({ 
-              type: 'SET_CURRENT_CHAT', 
-              payload: {
-                ...response,
-                domination_field: finalDominationField,
-                custom_prompt: finalPrompt
-              }
-            });
-            if (response.model) {
-              dispatch({ type: 'SET_MODEL', payload: response.model });
+          dispatch({ 
+            type: 'SET_CURRENT_CHAT', 
+            payload: {
+              ...response,
+              domination_field: finalDominationField,
+              custom_prompt: finalPrompt
             }
-            // Update the domination field in the state
-            dispatch({ type: 'SET_DOMINATION_FIELD', payload: finalDominationField });
-            
-            // Always update custom prompt state to maintain consistency
-            dispatch({ type: 'SET_CUSTOM_PROMPT', payload: finalPrompt });
-            setCustomPrompt(finalPrompt);
           });
+          if (response.model) {
+            dispatch({ type: 'SET_MODEL', payload: response.model });
+          }
+          // Update the domination field in the state
+          dispatch({ type: 'SET_DOMINATION_FIELD', payload: finalDominationField });
+          
+          // Always update custom prompt state to maintain consistency
+          dispatch({ type: 'SET_CUSTOM_PROMPT', payload: finalPrompt });
+          setCustomPrompt(finalPrompt);
           
           return response;
         } catch (error) {
           if (error instanceof ChatError && error.code === ErrorCodes.NOT_FOUND) {
             if (retries < maxRetries - 1) {
-              console.log(`Chat not found, retrying in ${retryDelay}ms... (${retries + 1}/${maxRetries})`);
               await new Promise(resolve => setTimeout(resolve, retryDelay));
               retries++;
               continue;
@@ -130,15 +137,6 @@ export function useChatMessage() {
 
     const messageId = crypto.randomUUID()
     const messagePairId = crypto.randomUUID()
-
-    console.log('🔍 [useChatMessage] Sending message:', {
-      content,
-      chatId: state.currentChat!.id,
-      model: state.selectedModel,
-      messageId,
-      messagePairId,
-      customPrompt
-    })
 
     const newMessage: ChatMessage = {
       id: messageId,
@@ -196,11 +194,15 @@ export function useChatMessage() {
             }
           })
         },
-        onChatUpdate: (chat) => {
-          dispatch({
-            type: 'UPDATE_CHAT',
-            payload: chat
-          })
+        onChatUpdate: (chatUpdate: any) => {
+          if ('type' in chatUpdate) {
+            dispatch(chatUpdate)
+          } else {
+            dispatch({
+              type: 'UPDATE_CHAT',
+              payload: chatUpdate
+            })
+          }
         }
       })
 
@@ -222,16 +224,6 @@ export function useChatMessage() {
       dispatch({ type: 'SET_STREAMING_MESSAGE_ID', payload: null })
     }
   }, [state.currentChat, state.selectedModel, state.dominationField, customPrompt, createChat, dispatch])
-
-  const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>) => {
-    dispatch({
-      type: 'UPDATE_MESSAGE',
-      payload: { 
-        id: messageId,
-        ...updates
-      }
-    })
-  }, [dispatch])
 
   const deleteMessage = useCallback((messageId: string) => {
     dispatch({

@@ -15,6 +15,7 @@ export type ChatAction =
   | { type: 'SET_CURRENT_CHAT'; payload: Chat | null }
   | { type: 'UPDATE_CHAT'; payload: Chat }
   | { type: 'INITIALIZE_CHAT'; payload: Chat }
+  | { type: 'DELETE_CHAT'; payload: string }
   
   // State Management
   | { type: 'SET_LOADING'; payload: boolean }

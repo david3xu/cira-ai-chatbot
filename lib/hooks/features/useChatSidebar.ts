@@ -41,6 +41,9 @@ export function useChatSidebar() {
   const chatGroups = useMemo((): ChatGroup[] => {
     if (!state.chats) return [];
     
+    // Force re-computation when chat names change
+    const chatSignature = state.chats.map(chat => `${chat.id}-${chat.name}-${chat.updatedAt}`).join('|');
+    
     const groups = state.chats.reduce<Record<string, Chat[]>>((acc: Record<string, Chat[]>, chat: Chat) => {
       const date = new Date(chat.createdAt).toLocaleDateString()
       if (!acc[date]) {
@@ -55,11 +58,11 @@ export function useChatSidebar() {
       .map(([date, chats]: [string, Chat[]]) => ({
         date,
         chats: chats.sort((a: Chat, b: Chat) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         ),
         totalMessages: chats.reduce((acc: number, chat: Chat) => acc + (chat.messages?.length || 0), 0)
       }))
-  }, [state.chats])
+  }, [state.chats]) // chatSignature is computed inside useMemo, so we only need state.chats as dependency
 
   const recentChats = useMemo(() => {
     if (!state.chats) return [];

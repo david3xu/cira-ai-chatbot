@@ -40,11 +40,6 @@ export function ChatDomainProvider({ children }: { children: React.ReactNode }) 
   const [state, dispatch] = useReducer((state: ChatDomainState, action: ChatDomainAction): ChatDomainState => {
     switch (action.type) {
       case 'SET_DOMINATION_FIELD':
-        // console.log('🔄 [ChatDomainProvider] Setting domination field:', {
-        //   current: state.dominationField,
-        //   new: action.payload
-        // });
-        
         if (typeof window !== 'undefined') {
           localStorage.setItem('selectedDominationField', action.payload);
         }
@@ -69,12 +64,6 @@ export function ChatDomainProvider({ children }: { children: React.ReactNode }) 
         
         // Always prefer the chat's domination field if available
         const dominationFieldToUse = action.payload.dominationField || state.dominationField;
-        
-        console.log('🔄 [ChatDomainProvider] Syncing with chat state:', {
-          currentField: state.dominationField,
-          chatField: action.payload.dominationField,
-          finalField: dominationFieldToUse
-        });
         
         // Save domination field to localStorage for persistence
         if (typeof window !== 'undefined' && dominationFieldToUse !== state.dominationField) {
@@ -103,10 +92,6 @@ export function ChatDomainProvider({ children }: { children: React.ReactNode }) 
   // Monitor domination field changes
   useEffect(() => {
     if (prevDominationField.current !== state.dominationField) {
-      console.log('🔄 [ChatDomainProvider] Domination field changed:', {
-        from: prevDominationField.current,
-        to: state.dominationField
-      });
       prevDominationField.current = state.dominationField;
     }
   }, [state.dominationField]);
@@ -116,7 +101,6 @@ export function ChatDomainProvider({ children }: { children: React.ReactNode }) 
     dispatch,
     actions: {
       setDominationField: (field: string) => {
-        console.log('🔄 [ChatDomainProvider] Action: setDominationField:', field);
         dispatch({ type: 'SET_DOMINATION_FIELD', payload: field });
       },
       setModel: (model: string) => dispatch({ type: 'SET_MODEL', payload: model }),

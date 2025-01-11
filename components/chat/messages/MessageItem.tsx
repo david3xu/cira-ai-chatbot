@@ -1,6 +1,6 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { ChatMessage } from '@/lib/types';
 import { cn } from '@/lib/utils/utils';
 import { StreamingIndicator } from '../loading/StreamingIndicator';
@@ -19,11 +19,16 @@ export const MessageItem = memo(function MessageItem({
   onEdit,
   isStreaming
 }: MessageItemProps) {
+  // Memoize the message content to prevent unnecessary re-renders
+  const assistantContent = useMemo(() => message.assistantContent?.trim() || '', [message.assistantContent]);
+  const userContent = useMemo(() => message.userContent?.trim() || '', [message.userContent]);
+  const shouldShowAssistant = (assistantContent && assistantContent.length > 0) || isStreaming || message.status === 'streaming';
+
   // Render both user and assistant messages
   return (
     <>
       {/* User message */}
-      {message.userContent && (
+      {userContent && userContent.length > 0 && (
         <div 
           className="flex mb-4 justify-end"
           data-testid={`message-${message.id}-user`}
@@ -35,7 +40,7 @@ export const MessageItem = memo(function MessageItem({
             'max-w-[80%]'
           )}>
             <div className="prose dark:prose-invert max-w-none break-words">
-              {message.userContent}
+              {userContent}
             </div>
           </div>
           {(onDelete || onEdit) && (
@@ -49,7 +54,7 @@ export const MessageItem = memo(function MessageItem({
       )}
 
       {/* Assistant message */}
-      {(message.assistantContent || isStreaming || message.status === 'streaming') && (
+      {shouldShowAssistant && (
         <div 
           className="flex mb-4 justify-start"
           data-testid={`message-${message.id}-assistant`}
@@ -61,8 +66,8 @@ export const MessageItem = memo(function MessageItem({
             'max-w-[80%]'
           )}>
             <div className="prose dark:prose-invert max-w-none break-words">
-              {message.assistantContent}
-              {(isStreaming || message.status === 'streaming') && (
+              {assistantContent}
+              {(isStreaming || message.status === 'streaming') && assistantContent.length > 0 && (
                 <StreamingIndicator className="inline-block ml-1" />
               )}
             </div>

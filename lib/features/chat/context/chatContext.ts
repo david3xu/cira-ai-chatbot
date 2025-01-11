@@ -119,7 +119,6 @@ export function useChatContext() {
     
     // Only log if there are meaningful changes
     if (JSON.stringify(stateSnapshot) !== JSON.stringify(lastLoggedState.current)) {
-      console.log('🔄 [useChatContext] Chat state updated:', stateSnapshot);
       lastLoggedState.current = stateSnapshot;
     }
   }, [context.state]); // Only depend on the entire state object

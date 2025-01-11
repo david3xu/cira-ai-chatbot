@@ -32,24 +32,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const hasImportantChanges = 
       state.currentChat?.id !== prevState.current.currentChat?.id ||
+      state.currentChat?.name !== prevState.current.currentChat?.name ||
       state.messages?.length !== prevState.current.messages?.length ||
       state.error !== prevState.current.error ||
       state.isLoading !== prevState.current.isLoading ||
-      state.isStreaming !== prevState.current.isStreaming;
+      state.isStreaming !== prevState.current.isStreaming ||
+      JSON.stringify(state.chats) !== JSON.stringify(prevState.current.chats);
 
     if (hasImportantChanges) {
-      console.log('🔄 ChatProvider state changed:', {
-        prev: {
-          chatId: prevState.current.currentChat?.id,
-          messageCount: prevState.current.messages?.length
-        },
-        current: {
-          chatId: state.currentChat?.id,
-          messageCount: state.messages?.length,
-          error: state.error,
-          isLoading: state.isLoading,
-          isStreaming: state.isStreaming
-        }
+      console.log('🔄 Chat state updated:', {
+        currentChatName: state.currentChat?.name,
+        prevChatName: prevState.current.currentChat?.name,
+        chatsChanged: JSON.stringify(state.chats) !== JSON.stringify(prevState.current.chats)
       });
       prevState.current = state;
     }
@@ -66,13 +60,48 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_STREAMING', payload: streaming });
     },
     setCurrentChat: (chat: Chat | null) => {
-      dispatch({ type: 'SET_CURRENT_CHAT', payload: chat });
+      if (chat && state.currentChat?.id === chat.id) {
+        dispatch({ 
+          type: 'SET_CURRENT_CHAT', 
+          payload: { ...chat, messages: state.currentChat.messages }
+        });
+      } else {
+        dispatch({ type: 'SET_CURRENT_CHAT', payload: chat });
+      }
     },
     setMessages: (messages: ChatMessage[]) => {
       dispatch({ type: 'SET_MESSAGES', payload: messages });
     },
     setChats: (chats: Chat[]) => {
-      dispatch({ type: 'SET_CHATS', payload: chats });
+      const updatedChats = chats.map(chat => 
+        chat.id === state.currentChat?.id 
+          ? { ...chat, messages: state.currentChat.messages }
+          : chat
+      );
+      dispatch({ type: 'SET_CHATS', payload: updatedChats });
+    },
+    updateChat: (update: Chat | ChatAction) => {
+      if ('type' in update) {
+        // Handle ChatAction
+        dispatch(update);
+      } else {
+        // Handle Chat object - convert to UPDATE_CHAT action
+        const updatedChat = {
+          ...update,
+          messages: update.messages || (state.currentChat?.id === update.id ? state.currentChat.messages : [])
+        };
+        
+        console.log('🔄 Converting chat update to action:', {
+          chatId: updatedChat.id,
+          name: updatedChat.name,
+          messageCount: updatedChat.messages.length
+        });
+
+        dispatch({ 
+          type: 'UPDATE_CHAT', 
+          payload: updatedChat 
+        });
+      }
     },
     addChat: (chat: Chat) => {
       dispatch({ type: 'SET_CHATS', payload: [...state.chats, chat] });
@@ -97,7 +126,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     startRequest: () => {},
     endRequest: () => {},
     setStreamingStatus: () => {}
-  }), [state.chats]);
+  }), [state.chats, state.currentChat]);
 
   return (
     <ChatContext.Provider value={{

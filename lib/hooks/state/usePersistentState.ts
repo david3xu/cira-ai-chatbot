@@ -53,9 +53,7 @@ export const usePersistentState = create<PersistentState & PersistentActions>()(
       setCurrentChat: (chatId) => set({ currentChatId: chatId }),
       toggleSidebar: () => {
         const currentState = get().isSidebarOpen;
-        console.log('toggleSidebar: current state:', currentState);
         set({ isSidebarOpen: !currentState });
-        console.log('toggleSidebar: new state:', !currentState);
       },
       toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
       setInputFocus: (focused) => set({ isInputFocused: focused }),
@@ -68,18 +66,13 @@ export const usePersistentState = create<PersistentState & PersistentActions>()(
       updateMessages: (messages) => set({ messages }),
       updateChats: (chats) => set({ chats }),
       setSidebarState: (isOpen) => {
-        console.log('setSidebarState called with:', isOpen);
         set({ isSidebarOpen: isOpen });
-        console.log('new isSidebarOpen state:', get().isSidebarOpen);
       },
       setCustomPrompt: (prompt) => set({ customPrompt: prompt }),
     }),
     {
       name: 'chat-persistent-storage',
       storage: createJSONStorage(() => localStorage),
-      onRehydrateStorage: () => (state) => {
-        console.log('Rehydrated state:', state);
-      },
       partialize: (state) => {
         const persistedState = {
           isSidebarOpen: state.isSidebarOpen,
@@ -87,7 +80,6 @@ export const usePersistentState = create<PersistentState & PersistentActions>()(
           theme: state.theme,
           customPrompt: state.customPrompt,
         };
-        console.log('Persisting state:', persistedState);
         return persistedState;
       },
     }

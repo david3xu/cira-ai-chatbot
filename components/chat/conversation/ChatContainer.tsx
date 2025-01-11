@@ -16,21 +16,32 @@ import { useChat } from '@/lib/hooks/chat/useChat';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ChatInput } from '../input/ChatInput';
 import { useNavigation } from '@/lib/navigation/useNavigation';
-import type { ChatOptions } from '@/lib/types';
+import type { ChatOptions, Chat } from '@/lib/types';
 
 interface ChatContainerProps {
   chatId?: string;
-  onCreateChat?: (options: ChatOptions) => Promise<void>;
+  onCreateChat?: (options: ChatOptions) => Promise<APIResponse<Chat>>;
+}
+
+interface APIResponse<T> {
+  data: T | null;
+  error: { message: string; status: number; } | null;
 }
 
 export const ChatContainer = memo(function ChatContainer({ chatId, onCreateChat }: ChatContainerProps) {
   const { isLoading: isProcessing, createChat } = useChat();
   const { navigate } = useNavigation();
 
-  const handleCreateChat = useCallback(async (options: ChatOptions) => {
-    const newChat = await createChat(options);
-    if (newChat?.id) {
-      navigate.toChat(newChat.id);
+  const handleCreateChat = useCallback(async (options: ChatOptions): Promise<APIResponse<Chat>> => {
+    try {
+      const newChat = await createChat(options);
+      if (newChat?.id) {
+        navigate.toChat(newChat.id);
+        return { data: newChat, error: null };
+      }
+      return { data: null, error: { message: 'Failed to create chat', status: 400 } };
+    } catch (error: any) {
+      return { data: null, error: { message: error?.message || 'Failed to create chat', status: 400 } };
     }
   }, [createChat, navigate]);
 

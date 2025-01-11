@@ -17,7 +17,8 @@ CREATE TABLE chat_history (
   status TEXT CHECK (status IN ('sending', 'success', 'failed', 'cancelled')) DEFAULT 'sending',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT unique_message_pair UNIQUE (message_pair_id)
+  CONSTRAINT unique_message_pair_user UNIQUE (message_pair_id, user_role),
+  CONSTRAINT unique_message_pair_assistant UNIQUE (message_pair_id, assistant_role)
 );
 
 -- Add foreign key constraint

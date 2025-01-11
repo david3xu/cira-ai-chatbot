@@ -1,51 +1,11 @@
 /**
- * InputActions Component
- * 
- * Action buttons for chat input:
- * - Send message button
- * - Attachment button
- * - Loading states
+ * Input action utilities for consistent styling and organization
  */
 
 'use client';
 
 import React from 'react';
 import { cn } from '@/lib/utils/utils';
-
-interface InputActionsProps {
-  children: React.ReactNode;
-  className?: string;
-  position?: 'top' | 'bottom' | 'right';
-  align?: 'start' | 'center' | 'end';
-}
-
-export function InputActions({
-  children,
-  className,
-  position = 'right',
-  align = 'center'
-}: InputActionsProps) {
-  return (
-    <div
-      className={cn(
-        'flex gap-2',
-        // Position
-        position === 'top' && 'absolute -top-12 right-0',
-        position === 'bottom' && 'absolute -bottom-12 right-0',
-        position === 'right' && 'absolute right-2 top-0 h-full',
-        // Alignment
-        position === 'right' && 'items-center',
-        align === 'start' && 'items-start',
-        align === 'center' && 'items-center',
-        align === 'end' && 'items-end',
-        // Custom classes
-        className
-      )}
-    >
-      {children}
-    </div>
-  );
-}
 
 // Action button wrapper for consistent styling
 export function ActionButton({

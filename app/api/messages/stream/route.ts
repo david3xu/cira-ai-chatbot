@@ -92,12 +92,15 @@ export async function POST(req: Request) {
       dominationField: options.dominationField,
       customPrompt: options.customPrompt
     }).then(async (response) => {
-      // If we got a chat topic, update the chat name
+      // If we got a chat topic, update the chat name in database only
       if (response.chat_topic && options.chatId) {
-        console.log('🏷️ Updating chat name with topic:', response.chat_topic);
+        console.log('🏷️ Updating chat name in database:', response.chat_topic);
         const { error: updateError } = await supabase
           .from('chats')
-          .update({ name: response.chat_topic })
+          .update({ 
+            name: response.chat_topic,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', options.chatId);
 
         if (updateError) {
@@ -105,7 +108,7 @@ export async function POST(req: Request) {
         }
       }
 
-      // Send final message with complete content
+      // Send final message with complete content and chat_topic
       const finalMessage = JSON.stringify({
         content: accumulatedContent,
         chat_topic: response.chat_topic,

@@ -117,6 +117,7 @@ BEGIN
     assistant_content = p_assistant_content,
     status = 'success',
     metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE(p_metadata, '{}'::jsonb),
+    chat_topic = COALESCE((p_metadata->>'chat_topic')::TEXT, chat_topic),
     updated_at = now()
   WHERE 
     message_pair_id = p_message_pair_id

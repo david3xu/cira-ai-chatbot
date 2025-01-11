@@ -15,6 +15,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Database } from '@/supabase/types/database.types';
 import { transformDatabaseMessage } from '@/lib/utils/messageTransformer';
 import { DEFAULT_PROMPT } from '@/lib/features/ai/config/constants';
+import { ChatAction } from '@/lib/types/chat-action';
 
 interface MessageResponse extends Response {
   messages?: ChatMessage[];
@@ -117,7 +118,8 @@ export class ChatService extends ApiService {
           p_model: options.model,
           p_chat_id: options.chatId,
           p_domination_field: options.dominationField,
-          p_custom_prompt: options.customPrompt || undefined
+          p_custom_prompt: options.customPrompt || undefined,
+          p_chat_topic: options.chatTopic || undefined
         });
 
       if (dbError) throw dbError;
@@ -187,18 +189,28 @@ export class ChatService extends ApiService {
             // Decode chunk and process SSE messages
             const chunk = decoder.decode(value);
             const lines = chunk.split('\n');
+            let currentJson = '';
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
-                try {
-                  // Trim any whitespace and ensure the JSON string is properly terminated
-                  const jsonStr = line.slice(6).trim();
-                  if (!jsonStr) continue;
-                  
-                  const data = JSON.parse(jsonStr);
+                const data = line.slice(6).trim();
+                if (!data || data === '[DONE]') continue;
 
-                  if (data.content) {
-                    streamingContent = data.content;
+                currentJson += data;
+                
+                try {
+                  const parsed = this.tryParseStreamJson(currentJson);
+                  
+                  if (Object.keys(parsed).length === 0) {
+                    // Incomplete JSON, keep accumulating
+                    continue;
+                  }
+                  
+                  // Reset current JSON since we successfully parsed
+                  currentJson = '';
+
+                  if (parsed.content) {
+                    streamingContent = parsed.content;
                     
                     // Send streaming update to UI
                     options.onMessage?.({
@@ -219,52 +231,58 @@ export class ChatService extends ApiService {
                   }
 
                   // Handle chat topic update
-                  if (data.chat_topic && options.chatId) {
-                    console.log('📝 Updating chat name with topic:', data.chat_topic);
-                    
-                    // Update chat name in chats table
-                    const { error: updateError } = await this.supabase
-                      .from('chats')
-                      .update({ name: data.chat_topic })
-                      .eq('id', options.chatId);
-
-                    if (updateError) {
-                      console.error('Failed to update chat name:', updateError);
-                    } else {
-                      // Update chat_topic in chat_history table
-                      const { error: historyError } = await this.supabase
-                        .from('chat_history')
-                        .update({ chat_topic: data.chat_topic })
-                        .eq('chat_id', options.chatId)
-                        .eq('message_pair_id', messagePairId);
-
-                      if (historyError) {
-                        console.error('Failed to update chat_topic in history:', historyError);
-                      }
-
-                      // Get the updated chat to dispatch the update action
-                      const { data: updatedChat, error: fetchError } = await this.supabase
+                  if (parsed.chat_topic && options.chatId) {
+                    console.log('📝 Updating chat name with topic:', parsed.chat_topic);
+                    try {
+                      // Get current chat data
+                      const { data: currentChat } = await this.supabase
                         .from('chats')
                         .select('*')
                         .eq('id', options.chatId)
                         .single();
 
-                      if (!fetchError && updatedChat) {
-                        // Dispatch UPDATE_CHAT action through the onChatUpdate callback
-                        options.onChatUpdate?.({
-                          ...updatedChat,
-                          messages: [],
-                          userId: updatedChat.user_id!,
-                          createdAt: updatedChat.created_at!,
-                          updatedAt: updatedChat.updated_at!,
-                          metadata: (updatedChat.metadata as Record<string, any>) || {}
-                        });
+                      if (currentChat) {
+                        const now = new Date().toISOString();
+                        
+                        // Create a properly formatted Chat object with the new topic
+                        // but preserve current messages
+                        const updatedChatData = {
+                          id: currentChat.id,
+                          name: parsed.chat_topic,
+                          userId: currentChat.user_id!,
+                          createdAt: currentChat.created_at!,
+                          updatedAt: now,
+                          model: currentChat.model,
+                          custom_prompt: currentChat.custom_prompt,
+                          domination_field: currentChat.domination_field,
+                          metadata: (currentChat.metadata as Record<string, any>) || {},
+                          // Don't fetch messages - let the reducer handle message state
+                          messages: []
+                        };
+
+                        // Update chat state
+                        if (options.onChatUpdate) {
+                          console.log('🔄 Dispatching chat update:', {
+                            id: updatedChatData.id,
+                            name: updatedChatData.name,
+                            preservingMessages: true
+                          });
+                          
+                          options.onChatUpdate({
+                            type: 'UPDATE_CHAT',
+                            payload: updatedChatData
+                          });
+
+                          console.log('🔄 Chat update dispatched with new name:', updatedChatData.name);
+                        }
                       }
+                    } catch (error) {
+                      console.error('Error updating chat name:', error);
                     }
                   }
 
                   // Handle final message
-                  if (data.status === 'success') {
+                  if (parsed.status === 'success') {
                     // Complete message pair using stored procedure
                     const { error: completeError } = await this.supabase
                       .rpc('complete_message_pair', {
@@ -273,7 +291,8 @@ export class ChatService extends ApiService {
                         p_metadata: {
                           ...options.metadata,
                           lastUpdated: new Date().toISOString(),
-                          status: 'success'
+                          status: 'success',
+                          chat_topic: parsed.chat_topic || null
                         }
                       });
 
@@ -301,11 +320,15 @@ export class ChatService extends ApiService {
                   }
 
                   // Handle error
-                  if (data.error) {
-                    throw new Error(data.error);
+                  if (parsed.error) {
+                    throw new Error(parsed.error);
                   }
                 } catch (error) {
-                  console.warn('Failed to parse SSE message:', error);
+                  if (error instanceof SyntaxError) {
+                    // JSON parsing error, continue accumulating
+                    continue;
+                  }
+                  console.warn('Failed to process SSE message:', error);
                 }
               }
             }
@@ -501,10 +524,32 @@ export class ChatService extends ApiService {
   }
 
   static async deleteChat(chatId: string): Promise<boolean> {
-    const response = await fetch(`/api/chats/${chatId}`, {
-      method: 'DELETE'
-    });
-    return response.ok;
+    try {
+      console.log('🗑️ Attempting to delete chat:', chatId);
+      const response = await fetch(`/api/chat/${chatId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Failed to delete chat:', { status: response.status, error: errorData });
+        throw new ChatError(
+          errorData.error || 'Failed to delete chat',
+          ErrorCodes.API_ERROR,
+          { status: response.status }
+        );
+      }
+
+      const result = await response.json();
+      console.log('🎉 Chat deleted successfully:', { chatId, result });
+      return true;
+    } catch (error) {
+      console.error('❌ Error in deleteChat:', error);
+      throw error;
+    }
   }
 
   // Streaming support
@@ -591,23 +636,69 @@ export class ChatService extends ApiService {
   } {
     const complete: string[] = [];
     const lines = buffer.split('\n');
-    const remainder = lines.pop() || '';
+    let remainder = lines.pop() || '';
+    let currentJson = '';
 
     for (const line of lines) {
       if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
+
         try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) complete.push(content);
+          // Attempt to build complete JSON objects
+          currentJson += data;
+          
+          // Check if we have a complete JSON object
+          try {
+            const parsed = JSON.parse(currentJson);
+            const content = parsed.content || parsed.choices?.[0]?.delta?.content;
+            if (content) complete.push(content);
+            currentJson = ''; // Reset for next object
+          } catch (e) {
+            // If it's not valid JSON yet, keep accumulating
+            if (!(e instanceof SyntaxError)) {
+              console.warn('Unexpected error parsing stream:', e);
+              currentJson = ''; // Reset on unexpected error
+            }
+            // Otherwise keep accumulating
+          }
         } catch (e) {
-          console.warn('Failed to parse stream message:', e);
+          console.warn('Failed to process stream message:', e);
+          currentJson = ''; // Reset on error
         }
       }
     }
 
+    // Handle any remaining partial JSON
+    if (currentJson) {
+      remainder = currentJson;
+    }
+
     return { complete, remainder };
+  }
+
+  private static isValidJson(str: string): boolean {
+    if (!str) return false;
+    try {
+      const parsed = JSON.parse(str);
+      return typeof parsed === 'object' && parsed !== null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  private static tryParseStreamJson(data: string): { content?: string; error?: string; status?: string; chat_topic?: string } {
+    try {
+      const parsed = JSON.parse(data);
+      return {
+        content: parsed.content || parsed.choices?.[0]?.delta?.content,
+        error: parsed.error,
+        status: parsed.status,
+        chat_topic: parsed.chat_topic
+      };
+    } catch (e) {
+      return {};
+    }
   }
 
   static async updateDomainConfig(
@@ -712,5 +803,82 @@ export class ChatService extends ApiService {
 
     // This should never be reached due to the throw in the catch block
     throw new ChatError('Failed to fetch chats after retries', ErrorCodes.DB_ERROR);
+  }
+
+  async updateChatTopic(chatId: string, topic: string, options: ChatStreamOptions) {
+    try {
+      const { data: currentChat } = await ChatService.supabase
+        .from('chats')
+        .select('*')
+        .eq('id', chatId)
+        .single();
+
+      if (currentChat?.name !== topic) {
+        const { data: updatedChat, error } = await ChatService.supabase
+          .from('chats')
+          .update({
+            name: topic,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', chatId)
+          .select('*')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        // Update chat_topic in chat_history table
+        await ChatService.supabase
+          .from('chat_history')
+          .update({ chat_topic: topic })
+          .eq('chat_id', chatId);
+
+        if (options.onChatUpdate && updatedChat) {
+          // Get the latest messages for the chat
+          const { data: messages } = await ChatService.supabase
+            .rpc('get_chat_messages', { p_chat_id: chatId });
+
+          console.log('🔍 Fetched messages for chat update:', {
+            messageCount: messages?.length || 0,
+            chatId,
+            topic
+          });
+
+          // Create a properly formatted Chat object with the new topic
+          const chatUpdate = {
+            id: updatedChat.id,
+            name: topic,
+            userId: updatedChat.user_id || '',
+            createdAt: updatedChat.created_at || '',
+            updatedAt: new Date().toISOString(),
+            custom_prompt: updatedChat.custom_prompt || '',
+            domination_field: updatedChat.domination_field || 'General',
+            metadata: updatedChat.metadata as Record<string, any> | null,
+            model: updatedChat.model || 'default',
+            messages: messages?.map(transformDatabaseMessage) || []
+          };
+
+          console.log('📝 Dispatching chat update:', {
+            chatId: chatUpdate.id,
+            name: chatUpdate.name,
+            messageCount: chatUpdate.messages.length
+          });
+
+          // Dispatch the chat update using UPDATE_CHAT action
+          options.onChatUpdate({
+            type: 'UPDATE_CHAT',
+            payload: chatUpdate
+          });
+        }
+
+        console.log('🏷️ Updated chat name with topic:', topic);
+        return updatedChat;
+      }
+      return currentChat;
+    } catch (error) {
+      console.error('Failed to update chat topic:', error);
+      throw error;
+    }
   }
 }

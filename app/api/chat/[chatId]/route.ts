@@ -3,6 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { ChatError, ErrorCodes } from '@/lib/types/errors';
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'edge';
 
@@ -27,7 +28,9 @@ export async function POST(
       p_content: content,
       p_model: selectedModel,
       p_domination_field: options.dominationField,
-      p_chat_id: params.chatId
+      p_chat_id: params.chatId,
+      p_custom_prompt: options.customPrompt,
+      p_chat_topic: options.chatTopic
     });
 
     if (error) {
@@ -125,6 +128,91 @@ export async function GET(
     return NextResponse.json({ data: chat });
   } catch (error) {
     console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { chatId: string } }
+) {
+  try {
+    // Create a Supabase client with service role key for admin operations
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    
+    const chatId = params.chatId;
+    const defaultUserId = process.env.NEXT_PUBLIC_DEFAULT_USER_ID;
+    
+    if (!defaultUserId) {
+      console.error('NEXT_PUBLIC_DEFAULT_USER_ID not set in environment variables');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
+    // First verify the chat exists and belongs to default user
+    const { data: chat, error: chatFetchError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('id', chatId)
+      .eq('user_id', defaultUserId)
+      .single();
+
+    if (chatFetchError || !chat) {
+      console.error('Chat not found:', chatFetchError);
+      return NextResponse.json(
+        { error: 'Chat not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete all messages associated with the chat first
+    const { error: messagesError } = await supabase
+      .from('chat_history')
+      .delete()
+      .eq('chat_id', chatId)
+      .eq('user_id', defaultUserId);
+
+    if (messagesError) {
+      console.error('Failed to delete chat history:', messagesError);
+      return NextResponse.json(
+        { error: 'Failed to delete chat history' },
+        { status: 500 }
+      );
+    }
+
+    // Then delete the chat itself
+    const { error: chatError } = await supabase
+      .from('chats')
+      .delete()
+      .eq('id', chatId)
+      .eq('user_id', defaultUserId);
+
+    if (chatError) {
+      console.error('Failed to delete chat:', chatError);
+      return NextResponse.json(
+        { error: 'Failed to delete chat' },
+        { status: 500 }
+      );
+    }
+
+    console.log('Successfully deleted chat:', chatId);
+    return NextResponse.json({ success: true, message: 'Chat deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting chat:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

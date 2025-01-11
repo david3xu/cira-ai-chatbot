@@ -424,6 +424,58 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_attachments: {
+        Row: {
+          id: string;
+          chat_id: string;
+          message_id: string;
+          file_path: string;
+          file_type: string;
+          file_name: string;
+          file_size: number;
+          metadata: Json;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          chat_id: string;
+          message_id: string;
+          file_path: string;
+          file_type: string;
+          file_name: string;
+          file_size: number;
+          metadata?: Json;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          chat_id?: string;
+          message_id?: string;
+          file_path?: string;
+          file_type?: string;
+          file_name?: string;
+          file_size?: number;
+          metadata?: Json;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "chat_attachments_chat_id_fkey";
+            columns: ["chat_id"];
+            referencedRelation: "chats";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "chat_attachments_message_id_fkey";
+            columns: ["message_id"];
+            referencedRelation: "chat_history";
+            referencedColumns: ["id"];
+          }
+        ];
+      }
     }
     Views: {
       [_ in never]: never
