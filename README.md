@@ -79,6 +79,14 @@ npm run build
 npm start
 ```
 
+To push code changes to GitHub:
+
+```bash
+git add .
+git commit -m "feat: your commit message"
+git push origin main
+```
+
 ## Database
 
 The project uses Supabase with the following main tables:

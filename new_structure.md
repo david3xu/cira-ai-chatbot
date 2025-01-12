@@ -2287,3 +2287,10 @@ Better documentation of what each action does
 More consistent state handling
 Better logging for debugging
 All existing features are preserved, but now with clearer separation of concerns and better documentation. Let me know if you'd like any other improvements.
+
+
+
+# message stuck 
+The message is getting stuck in the 'sending' state and there's excessive re-rendering of the Messages component. Let me help fix this.
+The problem is that the types and interfaces between the frontend and backend don't match exactly, and there's a race condition in the streaming status updates. Let me fix this:
+

@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useChatMessage } from '@/lib/hooks/chat/useChatMessage';
 import { useChatContext } from '@/lib/features/chat/context/chatContext';
 import { useDomainContext } from '@/lib/hooks/domain/useDomainContext';
-import { Send } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils/utils';
 import type { ChatOptions, Chat, ChatMessage } from '@/lib/types';
+import { AttachmentButton } from './AttachmentButton';
+import type { ChatAttachment } from '@/lib/services/ChatAttachmentService';
+import { toast } from 'sonner';
 
 interface APIResponse<T> {
   data: T | null;
@@ -22,16 +25,24 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
   const router = useRouter();
   const [content, setContent] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [messagePairId, setMessagePairId] = useState<string | undefined>(undefined);
   const { sendMessage } = useChatMessage();
   const { state, dispatch } = useChatContext();
   const domainContext = useDomainContext();
   const { isStreaming } = state;
   const currentChat: Chat | null = state.currentChat;
-  
+
+  const handleAttachment = useCallback((attachment: ChatAttachment) => {
+    console.log('ChatInput: Adding attachment', attachment);
+    setAttachments(prev => [...prev, attachment]);
+  }, []);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim() || isStreaming || isSending) return;
+    if ((!content.trim() && attachments.length === 0) || isStreaming || isSending) return;
 
+    console.log('ChatInput: Submitting message with attachments', { content, attachments });
     const messageContent = content;
     setContent('');
     
@@ -69,7 +80,6 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
             throw new Error('Failed to create new chat: Missing chat ID');
           }
           
-          // Create chat object matching the NewChatButton format
           chatToUse = {
             id: apiResponse.chatId,
             name: newChatOptions.name,
@@ -83,69 +93,36 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
             updatedAt: new Date().toISOString()
           } as Chat;
           
-          // Store the domination field in localStorage (matching NewChatButton)
           localStorage.setItem('selectedDominationField', newChatOptions.dominationField);
           
-          // Update chat context
           dispatch({ type: 'INITIALIZE_CHAT', payload: chatToUse });
           dispatch({ type: 'SET_CURRENT_CHAT', payload: chatToUse });
           
-          // Update domination field in context (matching NewChatButton)
-          dispatch({ type: 'SET_DOMINATION_FIELD', payload: newChatOptions.dominationField });
-          
-          console.log('ChatInput: Chat created successfully:', {
-            id: chatToUse.id,
-            model: chatToUse.model,
-            dominationField: chatToUse.domination_field
-          });
-          
-          // Create initial message
-          const initialMessage = {
-            id: crypto.randomUUID(),
-            chatId: chatToUse.id,
-            messagePairId: crypto.randomUUID(),
-            userContent: messageContent,
-            assistantContent: '',
-            userRole: 'user',
-            assistantRole: 'assistant',
-            status: 'sending',
-            model: chatToUse.model,
-            dominationField: chatToUse.domination_field,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            metadata: {}
-          } as ChatMessage;
-          
-          // Add message to chat
-          dispatch({ 
-            type: 'ADD_MESSAGE', 
-            payload: { 
-              message: initialMessage,
-              shouldCreateChat: false
-            }
-          });
-          
-          // Navigate to chat page
           router.push(`/chat/${chatToUse.id}`);
-          
-          // Send message after navigation
-          await sendMessage(messageContent);
         } catch (error) {
-          console.error('ChatInput: Failed to create chat:', error);
-          throw error;
+          console.error('Failed to create chat:', error);
+          toast.error('Failed to create new chat');
+          return;
         }
-      } else {
-        // If chat already exists, just send the message
-        await sendMessage(messageContent);
       }
+
+      // Send message with attachments in metadata
+      const metadata = attachments.length > 0 ? { attachments } : undefined;
+      console.log('ChatInput: Sending message with metadata', { metadata });
+      
+      await sendMessage(messageContent, { metadata });
+
+      // Clear attachments after successful send
+      setAttachments([]);
+      
     } catch (error) {
-      console.error('ChatInput: Failed to send message:', error);
-      setContent(messageContent);
+      console.error('Failed to send message:', error);
+      toast.error('Failed to send message');
     } finally {
       setIsSending(false);
     }
-  }, [content, isStreaming, isSending, currentChat, domainContext.state.selectedModel, 
-      domainContext.state.dominationField, state.customPrompt, onCreateChat, sendMessage, dispatch, router]);
+  }, [content, attachments, isStreaming, isSending, currentChat, domainContext.state.selectedModel, 
+      domainContext.state.dominationField, state.customPrompt, onCreateChat, dispatch, router, sendMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -156,44 +133,95 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
+    
+    // Auto-resize textarea
+    if (e.target) {
+      e.target.style.height = 'auto';
+      e.target.style.height = `${e.target.scrollHeight}px`;
+    }
   }, []);
 
+  // Generate message pair ID for attachments
+  const getMessagePairId = useCallback(() => {
+    if (!messagePairId) {
+      const newId = crypto.randomUUID();
+      setMessagePairId(newId);
+      return newId;
+    }
+    return messagePairId;
+  }, [messagePairId]);
+
   return (
-    <form onSubmit={handleSubmit} className="relative">
-      <div className="relative flex items-center">
+    <form onSubmit={handleSubmit} className="flex flex-col w-full gap-2">
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 p-2 mb-2 bg-gray-800/50 rounded-lg">
+          {attachments.map(attachment => (
+            <div 
+              key={attachment.id}
+              className="relative group"
+            >
+              {attachment.fileType.startsWith('image/') ? (
+                <img 
+                  src={`/api/chat/attachments/${attachment.id}/preview`}
+                  alt={attachment.fileName}
+                  className="w-20 h-20 object-cover rounded-md"
+                />
+              ) : (
+                <div className="flex items-center gap-2 p-2 bg-gray-700 rounded-md">
+                  <span className="text-sm truncate max-w-[150px]">
+                    {attachment.fileName}
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setAttachments(prev => prev.filter(a => a.id !== attachment.id))}
+                className="absolute top-1 right-1 p-1 bg-gray-900/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <span className="sr-only">Remove attachment</span>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 w-full">
+        <AttachmentButton 
+          messageId={messagePairId} 
+          onAttach={handleAttachment} 
+        />
         <textarea
           value={content}
-          onChange={handleChange}
+          onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your message..."
+          placeholder="Type a message..."
+          rows={1}
           className={cn(
-            "w-full min-h-[50px] max-h-[200px] p-4 pr-12",
-            "rounded-lg border border-blue-600",
-            "bg-gray-900 text-white",
-            "resize-none overflow-y-auto",
-            "focus:outline-none focus:ring-2 focus:ring-blue-500",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
+            "flex-1 resize-none bg-transparent border rounded-lg p-2",
+            "focus:outline-none focus:ring-1 focus:ring-blue-500",
             "placeholder:text-gray-400"
           )}
           disabled={isStreaming || isSending}
         />
-        <button 
+        <button
           type="submit"
-          disabled={!content.trim() || isStreaming || isSending}
+          disabled={(!content.trim() && attachments.length === 0) || isStreaming || isSending}
           className={cn(
-            "absolute right-2 p-2 rounded-md",
-            "text-white transition-colors",
-            "hover:bg-blue-700",
+            "p-2 rounded-lg",
+            "hover:bg-gray-700/50 disabled:hover:bg-transparent",
             "disabled:opacity-50 disabled:cursor-not-allowed",
-            "focus:outline-none focus:ring-2 focus:ring-blue-500"
-          )}
-          aria-label="Send message"
-        >
-          <Send className={cn(
-            "w-5 h-5",
-            content.trim() ? "text-blue-500" : "text-gray-400",
             "transition-colors"
-          )} />
+          )}
+        >
+          {isSending ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Send className="w-5 h-5" />
+          )}
         </button>
       </div>
     </form>

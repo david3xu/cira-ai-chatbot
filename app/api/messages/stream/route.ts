@@ -50,6 +50,7 @@ export async function POST(req: Request) {
 
     // Keep track of accumulated content
     let accumulatedContent = '';
+    let isCompleted = false;
 
     console.log('🔄 [stream] Processing message with options:', {
       model: options.model,
@@ -74,17 +75,26 @@ export async function POST(req: Request) {
           });
           await writer.write(encoder.encode(`data: ${message}\n\n`));
 
-          // Update message in database periodically (optional)
-          await supabase
-            .from('chat_history')
-            .update({ 
-              assistant_content: accumulatedContent,
-              status: 'streaming'
-            })
-            .eq('message_pair_id', options.messagePairId)
-            .eq('assistant_role', 'assistant');
+          // Update message in database periodically
+          if (options.messagePairId) {
+            await supabase
+              .from('chat_history')
+              .update({ 
+                assistant_content: accumulatedContent,
+                status: 'streaming',
+                updated_at: new Date().toISOString()
+              })
+              .eq('message_pair_id', options.messagePairId)
+              .eq('assistant_role', 'assistant');
+          }
         } catch (error) {
           console.error('Error in onToken:', error);
+          // Send error message
+          const errorMessage = JSON.stringify({
+            error: 'Failed to process token',
+            status: 'failed'
+          });
+          await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
         }
       },
       chatId: options.chatId || options.messagePairId,
@@ -92,7 +102,9 @@ export async function POST(req: Request) {
       dominationField: options.dominationField,
       customPrompt: options.customPrompt
     }).then(async (response) => {
-      // If we got a chat topic, update the chat name in database only
+      isCompleted = true;
+
+      // If we got a chat topic, update the chat name
       if (response.chat_topic && options.chatId) {
         console.log('🏷️ Updating chat name in database:', response.chat_topic);
         const { error: updateError } = await supabase
@@ -115,6 +127,20 @@ export async function POST(req: Request) {
         status: 'success'
       });
       await writer.write(encoder.encode(`data: ${finalMessage}\n\n`));
+
+      // Update final message status in database
+      if (options.messagePairId) {
+        await supabase
+          .from('chat_history')
+          .update({ 
+            assistant_content: accumulatedContent,
+            status: 'success',
+            updated_at: new Date().toISOString()
+          })
+          .eq('message_pair_id', options.messagePairId)
+          .eq('assistant_role', 'assistant');
+      }
+
       await writer.close();
     }).catch(async (error) => {
       console.error('❌ Error processing request:', error);
@@ -123,11 +149,14 @@ export async function POST(req: Request) {
       if (options?.messagePairId) {
         await supabase
           .from('chat_history')
-          .update({ status: 'failed' })
+          .update({ 
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
           .eq('message_pair_id', options.messagePairId);
       }
 
-      // Send error message with proper JSON formatting
+      // Send error message
       const errorMessage = JSON.stringify({
         error: error.message,
         status: 'failed'
@@ -135,6 +164,19 @@ export async function POST(req: Request) {
       await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
       await writer.close();
     });
+
+    // Set up a timeout to check completion
+    setTimeout(async () => {
+      if (!isCompleted) {
+        console.error('Stream timeout - forcing completion');
+        const timeoutMessage = JSON.stringify({
+          content: accumulatedContent || 'Response timeout',
+          status: 'failed'
+        });
+        await writer.write(encoder.encode(`data: ${timeoutMessage}\n\n`));
+        await writer.close();
+      }
+    }, 30000); // 30 second timeout
 
     // Return streaming response
     return new Response(stream.readable, {

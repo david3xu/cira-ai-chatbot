@@ -110,7 +110,7 @@ export function useChatMessage() {
     }
   }, [dispatch, setCustomPrompt]);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, options?: { metadata?: Record<string, any> }) => {
     if (!content.trim()) {
       console.warn('Empty message content')
       return
@@ -151,7 +151,8 @@ export function useChatMessage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: 'sending',
-      customPrompt: customPrompt ?? undefined
+      customPrompt: customPrompt ?? undefined,
+      metadata: options?.metadata || {}
     }
 
     // Add message to UI immediately
@@ -172,6 +173,7 @@ export function useChatMessage() {
         messagePairId,
         dominationField: state.dominationField,
         customPrompt: customPrompt ?? undefined,
+        metadata: options?.metadata,
         onMessage: (message) => {
           if (typeof message.assistantContent === 'string') {
             dispatch({ 
@@ -179,7 +181,8 @@ export function useChatMessage() {
               payload: {
                 id: messageId,
                 assistantContent: message.assistantContent,
-                status: message.status
+                status: message.status,
+                metadata: message.metadata
               }
             })
           }

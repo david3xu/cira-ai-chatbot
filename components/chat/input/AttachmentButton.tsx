@@ -40,6 +40,13 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
   const { state } = useChatContext();
   const currentChat = state.currentChat;
 
+  const clearPreview = useCallback(() => {
+    if (preview?.previewUrl) {
+      URL.revokeObjectURL(preview.previewUrl);
+    }
+    setPreview(null);
+  }, [preview]);
+
   const encodeFileToBase64 = useCallback(async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -49,21 +56,9 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     });
   }, []);
 
-  const createPreview = useCallback(async (file: File) => {
-    const preview: FilePreview = {
-      file,
-      type: file.type.startsWith('image/') ? 'image' : 'document'
-    };
-    
-    if (preview.type === 'image') {
-      preview.previewUrl = URL.createObjectURL(file);
-      preview.base64 = await encodeFileToBase64(file);
-    }
-    
-    setPreview(preview);
-  }, [encodeFileToBase64]);
-
   const handleUpload = useCallback(async (file: File, retryCount = 0) => {
+    console.log('AttachmentButton: Starting upload', { file, messageId, chatId: currentChat?.id });
+
     if (!currentChat?.id) {
       toast.error('Please start a chat first');
       return;
@@ -83,10 +78,7 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
       formData.append('chatId', currentChat.id);
       formData.append('messageId', messageId);
 
-      if (preview?.base64) {
-        formData.append('base64Content', preview.base64);
-      }
-
+      console.log('AttachmentButton: Sending upload request', { formData });
       const response = await fetch('/api/chat/attachments', {
         method: 'POST',
         body: formData
@@ -97,18 +89,20 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
       }
 
       const result = await response.json();
+      console.log('AttachmentButton: Upload response', result);
 
       if (result.error) {
         throw new Error(result.error);
       }
 
-      // Add base64 content to the attachment if it's an image
-      if (preview?.base64 && result.data) {
-        result.data.base64Content = preview.base64;
+      // Call onAttach with the attachment data
+      if (result.data) {
+        console.log('AttachmentButton: Calling onAttach with', result.data);
+        onAttach?.(result.data);
+        toast.success(`${file.type.startsWith('image/') ? 'Image' : 'Document'} uploaded successfully`);
       }
 
-      onAttach?.(result.data);
-      toast.success(`${file.type.startsWith('image/') ? 'Image' : 'Document'} uploaded successfully`);
+      clearPreview();
 
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -126,10 +120,29 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     } finally {
       if (retryCount === MAX_RETRIES || !uploadError) {
         setIsUploading(false);
-        clearPreview();
       }
     }
-  }, [currentChat?.id, messageId, onAttach, preview, uploadError]);
+  }, [currentChat?.id, messageId, onAttach, uploadError, clearPreview]);
+
+  const createPreview = useCallback(async (file: File) => {
+    console.log('AttachmentButton: Creating preview for file', { file });
+    const preview: FilePreview = {
+      file,
+      type: file.type.startsWith('image/') ? 'image' : 'document'
+    };
+    
+    if (preview.type === 'image') {
+      preview.previewUrl = URL.createObjectURL(file);
+      preview.base64 = await encodeFileToBase64(file);
+      console.log('AttachmentButton: Created image preview', { 
+        previewUrl: preview.previewUrl,
+        hasBase64: !!preview.base64
+      });
+    }
+    
+    setPreview(preview);
+    handleUpload(file);  // Automatically start upload when preview is created
+  }, [encodeFileToBase64, handleUpload]);
 
   const handleClick = useCallback(() => {
     // Create a file input element
@@ -172,19 +185,6 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     e.preventDefault();
   }, []);
 
-  const clearPreview = useCallback(() => {
-    if (preview?.previewUrl) {
-      URL.revokeObjectURL(preview.previewUrl);
-    }
-    setPreview(null);
-  }, [preview]);
-
-  const confirmUpload = useCallback(() => {
-    if (preview?.file) {
-      handleUpload(preview.file);
-    }
-  }, [preview, handleUpload]);
-
   return (
     <div
       onDrop={handleDrop}
@@ -202,13 +202,6 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
               />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
                 <button
-                  onClick={confirmUpload}
-                  className="p-1 bg-blue-500 rounded-full hover:bg-blue-400 mr-2"
-                  disabled={isUploading}
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-                <button
                   onClick={clearPreview}
                   className="p-1 bg-gray-700 rounded-full hover:bg-gray-600"
                   disabled={isUploading}
@@ -225,13 +218,6 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
               </span>
               <div className="absolute right-0 flex items-center gap-1">
                 <button
-                  onClick={confirmUpload}
-                  className="p-1 bg-blue-500 rounded-full hover:bg-blue-400"
-                  disabled={isUploading}
-                >
-                  <Send className="w-3 h-3" />
-                </button>
-                <button
                   onClick={clearPreview}
                   className="p-1 bg-gray-700 rounded-full hover:bg-gray-600"
                   disabled={isUploading}
@@ -247,23 +233,16 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
             </div>
           )}
         </div>
-      ) : null}
-      
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={handleClick}
-        disabled={isUploading || !currentChat}
-        className="relative"
-        title="Attach file (images or documents)"
-      >
-        {isUploading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Paperclip className="h-4 w-4" />
-        )}
-      </Button>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleClick}
+          className="hover:bg-gray-800/50"
+        >
+          <Paperclip className="w-4 h-4" />
+        </Button>
+      )}
     </div>
   );
 }

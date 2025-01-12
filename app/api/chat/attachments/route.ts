@@ -1,43 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ChatAttachmentService } from '@/lib/services/ChatAttachmentService';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { ChatAttachmentService } from '@/lib/services/ChatAttachmentService';
+import { ChatError } from '@/lib/types/errors';
 
-export const runtime = 'edge';
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const formData = await req.formData();
+    // Get form data
+    const formData = await request.formData();
     const file = formData.get('file') as File;
     const chatId = formData.get('chatId') as string;
     const messageId = formData.get('messageId') as string;
 
-    // Validate request
-    if (!file) {
+    // Validate required fields
+    if (!file || !chatId || !messageId) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    if (!chatId) {
-      return NextResponse.json(
-        { error: 'Chat ID is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!messageId) {
-      return NextResponse.json(
-        { error: 'Message ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check user authorization
+    // Initialize Supabase client
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
+    // Get current user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -48,36 +35,39 @@ export async function POST(req: NextRequest) {
     // Verify chat ownership
     const { data: chat, error: chatError } = await supabase
       .from('chats')
-      .select('id')
+      .select('user_id')
       .eq('id', chatId)
-      .eq('user_id', user.id)
       .single();
 
     if (chatError || !chat) {
       return NextResponse.json(
-        { error: 'Chat not found or access denied' },
+        { error: 'Chat not found' },
+        { status: 404 }
+      );
+    }
+
+    if (chat.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
         { status: 403 }
       );
     }
 
-    // Upload and process attachment
+    // Upload attachment
     const attachment = await ChatAttachmentService.uploadAttachment(
       file,
       chatId,
       messageId
     );
 
-    return NextResponse.json({
-      data: attachment,
-      error: null
-    });
+    return NextResponse.json({ data: attachment });
 
   } catch (error) {
-    console.error('Error handling attachment upload:', error);
-    
-    if (error instanceof Error) {
+    console.error('Error handling attachment:', error);
+
+    if (error instanceof ChatError) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, code: error.code, metadata: error.metadata },
         { status: 400 }
       );
     }
@@ -89,86 +79,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const messageId = searchParams.get('messageId');
-
-    if (!messageId) {
-      return NextResponse.json(
-        { error: 'Message ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check user authorization
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Verify message access
-    const { data: message, error: messageError } = await supabase
-      .from('chat_history')
-      .select('chat_id')
-      .eq('id', messageId)
-      .single();
-
-    if (messageError || !message) {
-      return NextResponse.json(
-        { error: 'Message not found' },
-        { status: 404 }
-      );
-    }
-
-    // Verify chat ownership
-    const { data: chat, error: chatError } = await supabase
-      .from('chats')
-      .select('id')
-      .eq('id', message.chat_id)
-      .eq('user_id', user.id)
-      .single();
-
-    if (chatError || !chat) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
-    }
-
-    // Get attachments
-    const attachments = await ChatAttachmentService.getAttachments(messageId);
-
-    return NextResponse.json({
-      data: attachments,
-      error: null
-    });
-
-  } catch (error) {
-    console.error('Error fetching attachments:', error);
-    
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(request.url);
     const attachmentId = searchParams.get('id');
 
     if (!attachmentId) {
@@ -178,10 +91,11 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // Check user authorization
+    // Initialize Supabase client
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
+    // Get current user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -189,14 +103,14 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // Verify attachment ownership through chat
-    const { data: attachment, error: attachmentError } = await supabase
+    // Get attachment details
+    const { data: attachment, error: fetchError } = await supabase
       .from('chat_attachments')
       .select('chat_id')
       .eq('id', attachmentId)
       .single();
 
-    if (attachmentError || !attachment) {
+    if (fetchError || !attachment) {
       return NextResponse.json(
         { error: 'Attachment not found' },
         { status: 404 }
@@ -206,14 +120,20 @@ export async function DELETE(req: NextRequest) {
     // Verify chat ownership
     const { data: chat, error: chatError } = await supabase
       .from('chats')
-      .select('id')
+      .select('user_id')
       .eq('id', attachment.chat_id)
-      .eq('user_id', user.id)
       .single();
 
     if (chatError || !chat) {
       return NextResponse.json(
-        { error: 'Access denied' },
+        { error: 'Chat not found' },
+        { status: 404 }
+      );
+    }
+
+    if (chat.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
         { status: 403 }
       );
     }
@@ -221,17 +141,14 @@ export async function DELETE(req: NextRequest) {
     // Delete attachment
     await ChatAttachmentService.deleteAttachment(attachmentId);
 
-    return NextResponse.json({
-      data: { success: true },
-      error: null
-    });
+    return NextResponse.json({ success: true });
 
   } catch (error) {
     console.error('Error deleting attachment:', error);
-    
-    if (error instanceof Error) {
+
+    if (error instanceof ChatError) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, code: error.code, metadata: error.metadata },
         { status: 400 }
       );
     }

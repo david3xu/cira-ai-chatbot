@@ -1,15 +1,20 @@
-import { supabase } from '@/lib/supabase/client';
-import type { Database, Json } from '@/supabase/types/database.types';
+/**
+ * ChatAttachmentService
+ * 
+ * Handles all chat attachment operations:
+ * - File uploads
+ * - Attachment management
+ * - Storage operations
+ */
 
-export type AttachmentType = 'image' | 'document';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import type { Database } from '@/supabase/types/database.types';
+import { ChatError, ErrorCodes } from '@/lib/types/errors';
 
-export interface AttachmentMetadata {
-  fileName: string;
-  fileSize: number;
-  fileType: string;
-  width?: number;  // For images
-  height?: number; // For images
-  duration?: number; // For future video/audio support
+// Progress event interface
+interface ProgressEvent {
+  loaded: number;
+  total: number;
 }
 
 export interface ChatAttachment {
@@ -20,187 +25,186 @@ export interface ChatAttachment {
   fileType: string;
   fileName: string;
   fileSize: number;
-  metadata: AttachmentMetadata;
-  url: string;
+  metadata: {
+    mimeType: string;
+    dimensions?: { width: number; height: number }; // for images
+    pageCount?: number; // for documents
+    textContent?: string; // for documents
+  };
   createdAt: string;
+  updatedAt: string;
 }
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'text/plain', 'text/markdown'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_TYPES = [
+  // Images
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  // Documents
+  'application/pdf', 'text/plain', 'text/markdown'
+];
+
+const MAX_FILE_SIZES = {
+  image: 5 * 1024 * 1024,    // 5MB
+  document: 10 * 1024 * 1024 // 10MB
+};
 
 export class ChatAttachmentService {
-  private static async validateFile(file: File): Promise<AttachmentType> {
-    // Check file size
-    if (file.size > MAX_FILE_SIZE) {
-      throw new Error(`File size exceeds maximum limit of ${MAX_FILE_SIZE / 1024 / 1024}MB`);
-    }
-
-    // Check file type
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      return 'image';
-    } else if (ALLOWED_DOCUMENT_TYPES.includes(file.type)) {
-      return 'document';
-    }
-    
-    throw new Error('Unsupported file type. Allowed types: Images (JPEG, PNG, GIF, WEBP) and Documents (PDF, TXT, MD)');
-  }
-
-  private static async getImageMetadata(file: File): Promise<{ width: number; height: number }> {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        resolve({ width: img.width, height: img.height });
-      };
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
-  private static async uploadToStorage(
-    file: File, 
-    chatId: string, 
-    type: AttachmentType
-  ): Promise<{ path: string; url: string }> {
-    const timestamp = new Date().getTime();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `chat-attachments/${chatId}/${type}/${timestamp}_${sanitizedName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('chat-attachments')
-      .upload(path, file);
-
-    if (uploadError) {
-      throw new Error(`Failed to upload file: ${uploadError.message}`);
-    }
-
-    const { data: { publicUrl: url } } = supabase.storage
-      .from('chat-attachments')
-      .getPublicUrl(path);
-
-    return { path, url };
-  }
+  private static supabase = createClientComponentClient<Database>();
 
   static async uploadAttachment(
     file: File,
     chatId: string,
-    messageId: string
+    messageId: string,
+    onProgress?: (progress: number) => void
   ): Promise<ChatAttachment> {
-    try {
-      // Validate file
-      const attachmentType = await this.validateFile(file);
+    // Validate file type
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      throw new ChatError(
+        'Unsupported file type',
+        ErrorCodes.VALIDATION_ERROR,
+        { fileType: file.type }
+      );
+    }
 
-      // Get metadata
-      let metadata: AttachmentMetadata = {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type
+    // Validate file size
+    const maxSize = file.type.startsWith('image/') 
+      ? MAX_FILE_SIZES.image 
+      : MAX_FILE_SIZES.document;
+
+    if (file.size > maxSize) {
+      throw new ChatError(
+        'File size exceeds limit',
+        ErrorCodes.VALIDATION_ERROR,
+        { fileSize: file.size, maxSize }
+      );
+    }
+
+    // Generate storage path
+    const fileType = file.type.startsWith('image/') ? 'images' : 'documents';
+    const filePath = `${chatId}/${fileType}/${file.name}`;
+
+    try {
+      // Start progress
+      onProgress?.(0);
+
+      // Upload to storage
+      const { error: uploadError, data } = await this.supabase.storage
+        .from('chat-attachments')
+        .upload(filePath, file, {
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Upload complete
+      onProgress?.(100);
+
+      // Extract metadata
+      const metadata: ChatAttachment['metadata'] = {
+        mimeType: file.type
       };
 
-      // Get additional metadata for images
-      if (attachmentType === 'image') {
-        const imageMeta = await this.getImageMetadata(file);
-        metadata = { ...metadata, ...imageMeta };
+      // For images, get dimensions
+      if (file.type.startsWith('image/')) {
+        const dimensions = await this.getImageDimensions(file);
+        metadata.dimensions = dimensions;
       }
 
-      // Upload file to storage
-      const { path, url } = await this.uploadToStorage(file, chatId, attachmentType);
+      // For text documents, extract content
+      if (file.type === 'text/plain' || file.type === 'text/markdown') {
+        const textContent = await file.text();
+        metadata.textContent = textContent.slice(0, 1000); // Store first 1000 chars
+      }
 
       // Create database record
-      const { data: attachment, error: dbError } = await supabase
+      const { data: attachment, error: dbError } = await this.supabase
         .from('chat_attachments')
         .insert({
           chat_id: chatId,
           message_id: messageId,
-          file_path: path,
+          file_path: filePath,
           file_type: file.type,
           file_name: file.name,
           file_size: file.size,
-          metadata: metadata as unknown as Json
+          metadata
         })
         .select()
         .single();
 
-      if (dbError) {
-        throw new Error(`Failed to save attachment: ${dbError.message}`);
-      }
+      if (dbError) throw dbError;
 
-      if (!attachment) {
-        throw new Error('Failed to create attachment record');
-      }
+      return this.transformAttachment(attachment);
 
-      return {
-        id: attachment.id,
-        chatId: attachment.chat_id,
-        messageId: attachment.message_id,
-        filePath: attachment.file_path,
-        fileType: attachment.file_type,
-        fileName: attachment.file_name,
-        fileSize: attachment.file_size,
-        metadata: attachment.metadata as unknown as AttachmentMetadata,
-        url,
-        createdAt: attachment.created_at || new Date().toISOString()
-      };
     } catch (error) {
-      console.error('Error uploading attachment:', error);
-      throw error;
+      console.error('Failed to upload attachment:', error);
+      throw new ChatError(
+        'Failed to upload attachment',
+        ErrorCodes.VALIDATION_ERROR,
+        { originalError: error }
+      );
     }
   }
 
   static async getAttachments(messageId: string): Promise<ChatAttachment[]> {
-    const { data: attachments, error } = await supabase
+    const { data, error } = await this.supabase
       .from('chat_attachments')
       .select('*')
       .eq('message_id', messageId);
 
-    if (error) {
-      throw new Error(`Failed to fetch attachments: ${error.message}`);
-    }
-
-    return attachments.map(attachment => ({
-      id: attachment.id,
-      chatId: attachment.chat_id,
-      messageId: attachment.message_id,
-      filePath: attachment.file_path,
-      fileType: attachment.file_type,
-      fileName: attachment.file_name,
-      fileSize: attachment.file_size,
-      metadata: attachment.metadata as unknown as AttachmentMetadata,
-      url: supabase.storage
-        .from('chat-attachments')
-        .getPublicUrl(attachment.file_path)
-        .data.publicUrl,
-      createdAt: attachment.created_at || new Date().toISOString()
-    }));
+    if (error) throw error;
+    return data.map(this.transformAttachment);
   }
 
   static async deleteAttachment(attachmentId: string): Promise<void> {
-    const { data: attachment, error: fetchError } = await supabase
+    const { data: attachment, error: fetchError } = await this.supabase
       .from('chat_attachments')
       .select('file_path')
       .eq('id', attachmentId)
       .single();
 
-    if (fetchError) {
-      throw new Error(`Failed to fetch attachment: ${fetchError.message}`);
-    }
+    if (fetchError) throw fetchError;
 
     // Delete from storage
-    const { error: storageError } = await supabase.storage
+    const { error: storageError } = await this.supabase.storage
       .from('chat-attachments')
       .remove([attachment.file_path]);
 
-    if (storageError) {
-      throw new Error(`Failed to delete file: ${storageError.message}`);
-    }
+    if (storageError) throw storageError;
 
-    // Delete from database
-    const { error: dbError } = await supabase
+    // Delete database record
+    const { error: dbError } = await this.supabase
       .from('chat_attachments')
       .delete()
       .eq('id', attachmentId);
 
-    if (dbError) {
-      throw new Error(`Failed to delete attachment record: ${dbError.message}`);
-    }
+    if (dbError) throw dbError;
+  }
+
+  private static async getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        resolve({
+          width: img.width,
+          height: img.height
+        });
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  private static transformAttachment(data: any): ChatAttachment {
+    return {
+      id: data.id,
+      chatId: data.chat_id,
+      messageId: data.message_id,
+      filePath: data.file_path,
+      fileType: data.file_type,
+      fileName: data.file_name,
+      fileSize: data.file_size,
+      metadata: data.metadata,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
   }
 } 

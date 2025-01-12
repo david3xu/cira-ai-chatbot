@@ -1,8 +1,12 @@
 "use client"
 
-import { memo, useMemo } from 'react';
-import { ChatMessage } from '@/lib/types';
+import React, { useCallback, useEffect, useRef, memo } from 'react';
+import { ChatMessage } from '@/lib/types/chat';
 import { MessageItem } from './MessageItem';
+import { useChatContext } from '@/lib/features/chat/context/chatContext';
+
+// Memoize individual message items
+const MemoizedMessageItem = memo(MessageItem);
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -12,42 +16,62 @@ interface MessageListProps {
   onEdit?: (message: ChatMessage) => void;
 }
 
-export const MessageList = memo(function MessageList({ 
+const MessageList: React.FC<MessageListProps> = ({ 
   messages, 
   isStreaming, 
   streamingMessage,
   onDelete,
   onEdit 
-}: MessageListProps) {
-  // Memoize the message list to prevent unnecessary re-renders
-  const messageList = useMemo(() => {
-    const list = messages.map((message) => (
-      <MessageItem 
-        key={message.id} 
-        message={message}
-        onDelete={onDelete}
-        onEdit={onEdit}
-        isStreaming={message.status === 'streaming'}
-      />
-    ));
+}) => {
+  const { state } = useChatContext();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const previousMessageCount = useRef<number>(0);
 
-    // Only add streaming message if it has content
-    if (isStreaming && streamingMessage && streamingMessage.assistantContent?.trim()) {
-      list.push(
-        <MessageItem 
-          key="streaming" 
-          message={streamingMessage} 
-          isStreaming={true}
-        />
-      );
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    const currentMessageCount = state.currentChat?.messages?.length || 0;
+    // Only scroll if new messages were added
+    if (currentMessageCount > previousMessageCount.current) {
+      scrollToBottom();
     }
+    previousMessageCount.current = currentMessageCount;
+  }, [state.currentChat?.messages, scrollToBottom]);
 
-    return list;
-  }, [messages, isStreaming, streamingMessage, onDelete, onEdit]);
+  // Only log on significant changes
+  useEffect(() => {
+    const messageCount = state.currentChat?.messages?.length || 0;
+    const messagesWithAttachments = state.currentChat?.messages?.filter(
+      (msg: ChatMessage) => (msg.metadata?.attachments ?? []).length > 0
+    ).length || 0;
+
+    if (messageCount !== previousMessageCount.current) {
+      console.log('Messages: Rendering message list', {
+        messageCount,
+        messagesWithAttachments
+      });
+    }
+  }, [state.currentChat?.messages]);
+
+  if (!state.currentChat?.messages) {
+    return null;
+  }
 
   return (
-    <div className="space-y-4">
-      {messageList}
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {messages.map((message: ChatMessage) => (
+        <MemoizedMessageItem 
+          key={message.id} 
+          message={message}
+          onDelete={onDelete}
+          onEdit={onEdit}
+        />
+      ))}
+      <div ref={messagesEndRef} />
     </div>
   );
-}); 
+};
+
+export { MessageList }; 

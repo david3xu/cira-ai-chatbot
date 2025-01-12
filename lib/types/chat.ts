@@ -1,5 +1,6 @@
 import { ChatTableRow, ChatMessageTableRow } from './database';
 import { ChatAction } from './chat-action';
+import type { ChatAttachment } from '@/lib/services/ChatAttachmentService';
 
 // Application interface extending the database type
 export interface Chat {
@@ -38,7 +39,10 @@ export interface ChatMessage {
   createdAt: string;
   updatedAt: string;
   customPrompt?: string | null | undefined;
-  metadata?: Record<string, any> | null;
+  metadata?: {
+    attachments?: ChatAttachment[];
+    [key: string]: any;
+  } | null;
   streaming?: {
     isActive: boolean;
     progress?: number;
