@@ -24,33 +24,61 @@ export const ChatBody = memo(function ChatBody() {
   const lastContentRef = useRef('');
   
   // Memoize messages to prevent unnecessary re-renders
-  const messages = useMemo(() => 
-    state.currentChat?.messages || state.messages || [],
-    [state.currentChat?.messages, state.messages]
-  );
+  const messages = useMemo(() => {
+    const currentMessages = state.currentChat?.messages || state.messages || [];
+    
+    // Log current messages state
+    console.log('💬 ChatBody: Current messages state', {
+      totalMessages: currentMessages.length,
+      messagesWithAttachments: currentMessages.filter(msg => (msg.metadata?.attachments?.length ?? 0) > 0).length,
+      chatId: state.currentChat?.id
+    });
+
+    return currentMessages;
+  }, [state.currentChat?.messages, state.messages]);
+
+  // Find the last message that's being streamed to
+  const streamingMessageBase = useMemo(() => {
+    if (!isStreaming || !state.streamingMessageId) return undefined;
+    const message = messages.find(msg => msg.id === state.streamingMessageId);
+    
+    // Log streaming message base
+    console.log('🔄 ChatBody: Streaming message base', {
+      found: !!message,
+      messageId: state.streamingMessageId,
+      hasAttachments: (message?.metadata?.attachments?.length ?? 0) > 0,
+      attachments: message?.metadata?.attachments
+    });
+
+    return message;
+  }, [isStreaming, state.streamingMessageId, messages]);
 
   // Create a streaming message object when streaming
   const streamingMessage = useMemo(() => {
-    if (!state.streamingMessage?.trim()) return undefined;
-    return {
-      id: 'streaming',
-      chatId: state.currentChat?.id || '',
-      messagePairId: 'streaming',
-      userContent: '',
+    if (!state.streamingMessage?.trim() || !streamingMessageBase) return undefined;
+
+    // Create a new message object that preserves the original message's metadata and attachments
+    const message = {
+      ...streamingMessageBase,
       assistantContent: state.streamingMessage.trim(),
-      userRole: 'system',
-      assistantRole: 'assistant',
-      dominationField: state.currentChat?.domination_field || 'general',
-      model: state.currentChat?.model || '',
       status: 'streaming',
-      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       streaming: {
         isActive: true,
         startedAt: new Date().toISOString()
       }
     } as ChatMessage;
-  }, [state.streamingMessage, state.currentChat]);
+
+    // Log streaming message creation
+    console.log('🎯 ChatBody: Created streaming message', {
+      messageId: message.id,
+      hasAttachments: (message.metadata?.attachments?.length ?? 0) > 0,
+      attachments: message.metadata?.attachments,
+      content: message.assistantContent.slice(0, 100) + '...'
+    });
+
+    return message;
+  }, [state.streamingMessage, streamingMessageBase]);
 
   // Track content changes and scroll accordingly
   useEffect(() => {
@@ -58,6 +86,15 @@ export const ChatBody = memo(function ChatBody() {
     const currentContent = lastMessage?.assistantContent || '';
     const hasNewMessage = messages.length > prevMessagesLengthRef.current;
     const hasNewContent = currentContent !== lastContentRef.current;
+
+    // Log content changes
+    console.log('📝 ChatBody: Content changes', {
+      hasNewMessage,
+      hasNewContent,
+      isStreaming,
+      lastMessageId: lastMessage?.id,
+      hasAttachments: (lastMessage?.metadata?.attachments?.length ?? 0) > 0
+    });
 
     // Scroll if:
     // 1. New message added

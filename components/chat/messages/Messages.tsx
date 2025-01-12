@@ -40,20 +40,43 @@ const MessageList: React.FC<MessageListProps> = ({
     previousMessageCount.current = currentMessageCount;
   }, [state.currentChat?.messages, scrollToBottom]);
 
-  // Only log on significant changes
+  // Enhanced logging for message and attachment tracking
   useEffect(() => {
     const messageCount = state.currentChat?.messages?.length || 0;
     const messagesWithAttachments = state.currentChat?.messages?.filter(
       (msg: ChatMessage) => (msg.metadata?.attachments ?? []).length > 0
-    ).length || 0;
+    );
 
     if (messageCount !== previousMessageCount.current) {
-      console.log('Messages: Rendering message list', {
+      console.log('🔄 Messages: Rendering message list', {
         messageCount,
-        messagesWithAttachments
+        messagesWithAttachmentsCount: messagesWithAttachments?.length || 0,
+        isStreaming,
+        streamingMessageId: streamingMessage?.id
       });
+
+      // Log details of messages with attachments
+      if (messagesWithAttachments?.length) {
+        console.log('📎 Messages with attachments:', messagesWithAttachments.map(msg => ({
+          messageId: msg.id,
+          attachmentCount: msg.metadata?.attachments?.length,
+          attachments: msg.metadata?.attachments?.map(att => ({
+            id: att.id,
+            fileName: att.fileName,
+            fileType: att.fileType
+          }))
+        })));
+      }
+
+      // Log current messages being rendered
+      console.log('📝 Current messages:', messages.map(msg => ({
+        id: msg.id,
+        hasAttachments: (msg.metadata?.attachments?.length ?? 0) > 0,
+        content: msg.userContent || msg.assistantContent,
+        metadata: msg.metadata
+      })));
     }
-  }, [state.currentChat?.messages]);
+  }, [state.currentChat?.messages, isStreaming, streamingMessage, messages]);
 
   if (!state.currentChat?.messages) {
     return null;
@@ -61,14 +84,25 @@ const MessageList: React.FC<MessageListProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {messages.map((message: ChatMessage) => (
-        <MemoizedMessageItem 
-          key={message.id} 
-          message={message}
-          onDelete={onDelete}
-          onEdit={onEdit}
-        />
-      ))}
+      {messages.map((message: ChatMessage) => {
+        // Log each message being rendered
+        console.log('🎯 Rendering message:', {
+          id: message.id,
+          hasAttachments: (message.metadata?.attachments?.length ?? 0) > 0,
+          attachments: message.metadata?.attachments,
+          isStreaming: isStreaming && message.id === streamingMessage?.id
+        });
+        
+        return (
+          <MemoizedMessageItem 
+            key={message.id} 
+            message={message}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            isStreaming={isStreaming && message.id === streamingMessage?.id}
+          />
+        );
+      })}
       <div ref={messagesEndRef} />
     </div>
   );

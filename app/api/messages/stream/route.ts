@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     // Keep track of accumulated content
     let accumulatedContent = '';
     let isCompleted = false;
+    let hasError = false;
 
     console.log('🔄 [stream] Processing message with options:', {
       model: options.model,
@@ -61,122 +62,135 @@ export async function POST(req: Request) {
     });
 
     // Process AI response with streaming
-    answerQuestion({
-      messages: chatMessages,
-      onToken: async (token) => {
-        try {
-          // Accumulate tokens
-          accumulatedContent += token;
+    const processStream = async () => {
+      try {
+        await answerQuestion({
+          messages: chatMessages,
+          onToken: async (token) => {
+            try {
+              if (hasError || isCompleted) return;
 
-          // Write accumulated content to stream with proper JSON formatting
-          const message = JSON.stringify({
+              // Accumulate tokens
+              accumulatedContent += token;
+
+              // Write accumulated content to stream with proper JSON formatting
+              const message = JSON.stringify({
+                content: accumulatedContent,
+                status: 'streaming'
+              });
+              await writer.write(encoder.encode(`data: ${message}\n\n`));
+
+              // Update message in database periodically
+              if (options.messagePairId) {
+                await supabase
+                  .from('chat_history')
+                  .update({ 
+                    assistant_content: accumulatedContent,
+                    status: 'streaming',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('message_pair_id', options.messagePairId)
+                  .eq('assistant_role', 'assistant');
+              }
+            } catch (error) {
+              console.error('Error in onToken:', error);
+              hasError = true;
+              // Send error message
+              const errorMessage = JSON.stringify({
+                error: 'Failed to process token',
+                status: 'failed'
+              });
+              await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
+            }
+          },
+          chatId: options.chatId || options.messagePairId,
+          model: options.model,
+          dominationField: options.dominationField,
+          customPrompt: options.customPrompt
+        }).then(async (response) => {
+          isCompleted = true;
+
+          // If we got a chat topic, update the chat name
+          if (response.chat_topic && options.chatId) {
+            console.log('🏷️ Updating chat name in database:', response.chat_topic);
+            const { error: updateError } = await supabase
+              .from('chats')
+              .update({ 
+                name: response.chat_topic,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', options.chatId);
+
+            if (updateError) {
+              console.error('Failed to update chat name:', updateError);
+            }
+          }
+
+          // Send final message with complete content and chat_topic
+          const finalMessage = JSON.stringify({
             content: accumulatedContent,
-            status: 'streaming'
+            chat_topic: response.chat_topic,
+            status: 'success'
           });
-          await writer.write(encoder.encode(`data: ${message}\n\n`));
+          await writer.write(encoder.encode(`data: ${finalMessage}\n\n`));
 
-          // Update message in database periodically
+          // Update final message status in database
           if (options.messagePairId) {
             await supabase
               .from('chat_history')
               .update({ 
                 assistant_content: accumulatedContent,
-                status: 'streaming',
-                updated_at: new Date().toISOString()
+                status: 'success',
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  ...options.metadata,
+                  chat_topic: response.chat_topic,
+                  lastUpdated: new Date().toISOString()
+                }
               })
               .eq('message_pair_id', options.messagePairId)
               .eq('assistant_role', 'assistant');
           }
-        } catch (error) {
-          console.error('Error in onToken:', error);
-          // Send error message
-          const errorMessage = JSON.stringify({
-            error: 'Failed to process token',
-            status: 'failed'
-          });
-          await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
+        });
+      } catch (error: unknown) {
+        hasError = true;
+        console.error('❌ Error processing request:', error);
+        
+        // Update message status on error
+        if (options?.messagePairId) {
+          await supabase
+            .from('chat_history')
+            .update({ 
+              status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('message_pair_id', options.messagePairId);
         }
-      },
-      chatId: options.chatId || options.messagePairId,
-      model: options.model,
-      dominationField: options.dominationField,
-      customPrompt: options.customPrompt
-    }).then(async (response) => {
-      isCompleted = true;
 
-      // If we got a chat topic, update the chat name
-      if (response.chat_topic && options.chatId) {
-        console.log('🏷️ Updating chat name in database:', response.chat_topic);
-        const { error: updateError } = await supabase
-          .from('chats')
-          .update({ 
-            name: response.chat_topic,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', options.chatId);
-
-        if (updateError) {
-          console.error('Failed to update chat name:', updateError);
-        }
-      }
-
-      // Send final message with complete content and chat_topic
-      const finalMessage = JSON.stringify({
-        content: accumulatedContent,
-        chat_topic: response.chat_topic,
-        status: 'success'
-      });
-      await writer.write(encoder.encode(`data: ${finalMessage}\n\n`));
-
-      // Update final message status in database
-      if (options.messagePairId) {
-        await supabase
-          .from('chat_history')
-          .update({ 
-            assistant_content: accumulatedContent,
-            status: 'success',
-            updated_at: new Date().toISOString()
-          })
-          .eq('message_pair_id', options.messagePairId)
-          .eq('assistant_role', 'assistant');
-      }
-
-      await writer.close();
-    }).catch(async (error) => {
-      console.error('❌ Error processing request:', error);
-      
-      // Update message status on error
-      if (options?.messagePairId) {
-        await supabase
-          .from('chat_history')
-          .update({ 
-            status: 'failed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('message_pair_id', options.messagePairId);
-      }
-
-      // Send error message
-      const errorMessage = JSON.stringify({
-        error: error.message,
-        status: 'failed'
-      });
-      await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
-      await writer.close();
-    });
-
-    // Set up a timeout to check completion
-    setTimeout(async () => {
-      if (!isCompleted) {
-        console.error('Stream timeout - forcing completion');
-        const timeoutMessage = JSON.stringify({
-          content: accumulatedContent || 'Response timeout',
+        // Send error message
+        const errorMessage = JSON.stringify({
+          error: error instanceof Error ? error.message : 'Stream processing failed',
           status: 'failed'
         });
-        await writer.write(encoder.encode(`data: ${timeoutMessage}\n\n`));
+        await writer.write(encoder.encode(`data: ${errorMessage}\n\n`));
+      } finally {
+        if (!hasError && !isCompleted) {
+          // Send timeout message if neither completed nor errored
+          const timeoutMessage = JSON.stringify({
+            content: accumulatedContent || 'Response timeout',
+            status: 'failed'
+          });
+          await writer.write(encoder.encode(`data: ${timeoutMessage}\n\n`));
+        }
+        // Ensure writer is closed in finally block
         await writer.close();
       }
-    }, 30000); // 30 second timeout
+    };
+
+    // Start processing in the background
+    processStream().catch((error: unknown) => {
+      console.error('Error in processStream:', error);
+    });
 
     // Return streaming response
     return new Response(stream.readable, {
@@ -188,7 +202,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error) {
-    console.error('❌ Error processing request:', error);
+    console.error('❌ Error in stream route:', error);
     
     // Update message status on error
     if (options?.messagePairId) {
