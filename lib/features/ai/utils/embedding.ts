@@ -16,7 +16,7 @@
 import { openai } from '../config/openai';
 import { retryWithBackoff } from './retry';
 import { EmbeddingService } from '@/lib/features/ai/services/embeddingService';
-import { supabase } from '@/lib/supabase/client';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 interface SearchResult {
   content: string;
@@ -27,6 +27,8 @@ interface Document {
   content: string | null;
   similarity?: number;
 }
+
+const supabase = getSupabaseClient();
 
 export async function getEmbedding(text: string | null): Promise<number[]> {
   if (!text) {

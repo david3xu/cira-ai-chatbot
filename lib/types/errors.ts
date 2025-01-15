@@ -17,7 +17,8 @@ export const ErrorCodes = {
   ABORT_ERROR: 'ABORT_ERROR',
   FETCH_ERROR: 'FETCH_ERROR',
   AUTH_ERROR: 'AUTH_ERROR',
-  NOT_FOUND: 'NOT_FOUND'
+  NOT_FOUND: 'NOT_FOUND',
+  STORAGE_ERROR: 'STORAGE_ERROR'
 } as const;
 
 export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes]; 

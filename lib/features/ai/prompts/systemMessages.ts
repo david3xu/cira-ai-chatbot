@@ -17,58 +17,68 @@
 import { DOMINATION_FIELDS, DEFAULT_PROMPT } from '../config/constants';
 import { DominationField } from './types';
 import { codeBlock } from 'common-tags';
+import { MessageContent } from '@/lib/types/database';
 
 export function getSystemMessage(dominationField: DominationField, customPrompt?: string | null): string {
   const baseMessage = (() => {
     switch (dominationField) {
       case DOMINATION_FIELDS.PROGRAMMING:
-        return 'You are a helpful assistant specializing in programming languages, design patterns, and software development.';
+        return 'You are a helpful assistant specializing in programming languages, design patterns, and software development. When users share code files or documents, analyze them and provide relevant insights.';
       case DOMINATION_FIELDS.DATA_MINING:
-        return 'You are a helpful assistant specializing in data mining techniques, algorithms, and applications.';
+        return 'You are a helpful assistant specializing in data mining techniques, algorithms, and applications. When users share data files or documents, analyze them and provide relevant insights.';
       case DOMINATION_FIELDS.DSA:
-        return 'You are a helpful assistant specializing in data structures, algorithms, and computational complexity.';
+        return 'You are a helpful assistant specializing in data structures, algorithms, and computational complexity. When users share code files or documents, analyze them and provide relevant insights.';
       case DOMINATION_FIELDS.EMAIL:
-        return 'You are a helpful assistant specializing in email communication and professional writing.';
+        return 'You are a helpful assistant specializing in email communication and professional writing. When users share documents or attachments, analyze them and provide relevant insights.';
       case DOMINATION_FIELDS.RUBIN:
-        return 'You are a helpful assistant specializing in Rubin Observatory and astronomical observations.';
+        return 'You are a helpful assistant specializing in Rubin Observatory and astronomical observations. When users share data files, images, or documents, analyze them and provide relevant insights.';
       case DOMINATION_FIELDS.NORMAL_CHAT:
       default:
-        return DEFAULT_PROMPT;
+        return `${DEFAULT_PROMPT} When users share files or attachments, I will acknowledge them and provide relevant insights based on their content. For images, I will describe what I see. For documents, I will analyze their content and purpose.`;
     }
   })();
 
   return customPrompt ? `${baseMessage}\n\nCustom Instructions:\n${customPrompt}` : baseMessage;
 }
 
+function getTextContent(content: string | MessageContent[]): string {
+  if (Array.isArray(content)) {
+    return content.map(c => c.type === 'text' ? c.text : '[Image]').join(' ');
+  }
+  return content;
+}
+
 export function getContextualPrompt(
   dominationField: DominationField,
   previousConvo: string,
-  latestUserContent: string,
+  latestUserContent: string | MessageContent[],
   contextText: string
 ): string {
   console.log('🎯 [systemMessages] Generating prompt for:', {
     dominationField,
-    contentLength: latestUserContent.length
+    contentLength: typeof latestUserContent === 'string' ? latestUserContent.length : latestUserContent.length
   });
+
+  const formattedContent = getTextContent(latestUserContent);
 
   switch (dominationField) {
     case DOMINATION_FIELDS.PROGRAMMING:
       console.log('📝 Using Programming Languages prompt');
-      return getProgrammingPrompt(previousConvo, latestUserContent);
+      return getProgrammingPrompt(previousConvo, formattedContent);
     case DOMINATION_FIELDS.DATA_MINING:
       console.log('📝 Using Data Mining prompt');
-      return getDataMiningPrompt(previousConvo, latestUserContent);
+      return getDataMiningPrompt(previousConvo, formattedContent);
     case DOMINATION_FIELDS.DSA:
       console.log('📝 Using DSA prompt');
-      return getDSAPrompt(previousConvo, latestUserContent);
+      return getDSAPrompt(previousConvo, formattedContent);
     case DOMINATION_FIELDS.EMAIL:
-      return getEmailPrompt(previousConvo, latestUserContent);
+      return getEmailPrompt(previousConvo, formattedContent);
     case DOMINATION_FIELDS.RUBIN:
-      return getRubinPrompt(previousConvo, latestUserContent);
+      return getRubinPrompt(previousConvo, formattedContent);
     case DOMINATION_FIELDS.NORMAL_CHAT:
     default:
       console.log('📝 Using Normal Chat prompt');
-      return getNormalChatPrompt(previousConvo, latestUserContent);
+      return getNormalChatPrompt(previousConvo, formattedContent);
   }
 }
 
@@ -244,22 +254,26 @@ export function getRubinPrompt(
 
 export function formatConversationByDomain(
   dominationField: DominationField,
-  userContent: string,
+  userContent: string | MessageContent[],
   assistantContent: string
 ): string {
+  const formattedUserContent = Array.isArray(userContent) 
+    ? userContent.map(c => c.type === 'text' ? c.text : '[Image]').join(' ') 
+    : userContent;
+
   switch (dominationField) {
     case DOMINATION_FIELDS.EMAIL:
-      return `Email: ${userContent}\nResponse: ${assistantContent}`;
+      return `Email: ${formattedUserContent}\nResponse: ${assistantContent}`;
     case DOMINATION_FIELDS.RUBIN:
-      return `Observer: ${userContent}\nAstronomer: ${assistantContent}`;
+      return `Observer: ${formattedUserContent}\nAstronomer: ${assistantContent}`;
     case DOMINATION_FIELDS.PROGRAMMING:
-      return `Question: ${userContent}\nProgrammer: ${assistantContent}`;
+      return `Question: ${formattedUserContent}\nProgrammer: ${assistantContent}`;
     case DOMINATION_FIELDS.DATA_MINING:
-      return `Query: ${userContent}\nAnalyst: ${assistantContent}`;
+      return `Query: ${formattedUserContent}\nAnalyst: ${assistantContent}`;
     case DOMINATION_FIELDS.DSA:
-      return `Problem: ${userContent}\nSolution: ${assistantContent}`;
+      return `Problem: ${formattedUserContent}\nSolution: ${assistantContent}`;
     case DOMINATION_FIELDS.NORMAL_CHAT:
     default:
-      return `User: ${userContent}\nAssistant: ${assistantContent}`;
+      return `User: ${formattedUserContent}\nAssistant: ${assistantContent}`;
   }
 } 

@@ -1,75 +1,165 @@
-/**
- * Message Processor Service
- * 
- * Processes chat messages with:
- * - History management
- * - System message integration
- * - Image handling
- * - Message formatting
- * 
- * Features:
- * - Chat history processing
- * - System prompt integration
- * - Image support
- * - Null checking
- * - Debug logging
- */
+import { FormattedMessage, MessageContent } from '@/lib/types/chat';
 
-import { FormattedMessage } from '@/lib/types';
+interface MessageAttachment {
+  fileType?: string;
+  metadata?: {
+    base64Data: string;
+    imageDetail?: string;
+  };
+}
 
-export async function processMessages(
-  chatHistory: any[],
-  prompt: string,
-  systemMessage: string,
-  imageBase64?: string
-): Promise<FormattedMessage[]> {
-  console.log('🔄 [messageProcessor] Processing messages:', {
-    historyLength: chatHistory.length,
-    hasSystemMessage: !!systemMessage,
-    hasImage: !!imageBase64
+export function processMessage(message: any): FormattedMessage {
+  console.log('📥 Processing message:', {
+    role: message.role || 'user',
+    hasAttachments: !!message.metadata?.attachments?.length,
+    isImage: message.type === 'image',
+    hasContent: !!(message.userContent || message.content)
   });
 
-  const messages: FormattedMessage[] = [
-    {
-      role: 'system',
-      content: systemMessage
-    }
-  ];
-
-  // Add chat history with null checks
-  chatHistory.forEach(msg => {
-    if (msg && (msg.role || msg.content)) {
-      messages.push({
-        role: msg.role || 'user',
-        content: typeof msg.content === 'string' 
-          ? msg.content 
-          : msg.content 
-            ? JSON.stringify(msg.content) 
-            : '',
-        metadata: msg.metadata
-      });
-    }
-  });
-
-  // Add current prompt
-  messages.push({
-    role: 'user',
-    content: prompt
-  });
-
-  // Add image if present
-  if (imageBase64) {
-    messages.push({
-      role: 'user',
-      content: imageBase64,
-      type: 'image'
-    });
+  // Ensure required fields
+  if (!message.role) {
+    message.role = 'user';
   }
 
-  console.log('✅ [messageProcessor] Messages processed:', {
-    totalMessages: messages.length,
-    firstMessageMetadata: messages[0].metadata
+  // Handle messages with attachments in metadata
+  if (message.metadata?.attachments?.length > 0 || message.type === 'image') {
+    const content: MessageContent[] = [];
+    
+    // Add text content if present
+    if (message.userContent || message.content) {
+      content.push({
+        type: 'text' as const,
+        text: message.userContent || message.content || "What's in this image?"
+      });
+      console.log('📝 Added text content:', message.userContent || message.content);
+    }
+    
+    // Add image attachments from metadata
+    if (message.metadata?.attachments) {
+      message.metadata.attachments.forEach((attachment: any) => {
+        if (attachment.fileType?.startsWith('image/') && attachment.metadata?.base64Data) {
+          const imageContent: MessageContent = {
+            type: 'image_url',
+            image_url: {
+              url: `data:${attachment.fileType};base64,${attachment.metadata.base64Data}`,
+              detail: attachment.metadata.imageDetail || 'auto'
+            }
+          };
+          content.push(imageContent);
+          console.log('📸 Added image:', {
+            fileType: attachment.fileType,
+            detail: attachment.metadata.imageDetail || 'auto',
+            urlStart: imageContent.image_url.url.substring(0, 50) + '...'
+          });
+        }
+      });
+    }
+
+    // Ensure we have valid content
+    if (content.length === 0) {
+      console.log('⚠️ No valid content found, using default text');
+      return {
+        role: message.role,
+        content: message.userContent || message.content || '',
+        metadata: { hasVisionContent: false }
+      };
+    }
+
+    const result: FormattedMessage = {
+      role: message.role,
+      content,
+      metadata: {
+        hasVisionContent: content.some(c => c.type === 'image_url')
+      }
+    };
+
+    console.log('✨ Processed message:', {
+      role: result.role,
+      contentTypes: content.map(c => c.type),
+      hasVision: result.metadata?.hasVisionContent,
+      contentCount: content.length,
+      content: content.map(c => ({ type: c.type, ...(c.type === 'text' ? { text: c.text } : {}) }))
+    });
+
+    return result;
+  }
+
+  // Handle text-only messages
+  return {
+    role: message.role,
+    content: message.userContent || message.content || '',
+    metadata: {
+      hasVisionContent: false
+    }
+  };
+}
+
+export async function processMessages(
+  messages: any[],
+  latestContent: string,
+  systemMessage: string,
+  imageFile?: string,
+  imageDetail: 'low' | 'high' | 'auto' = 'auto'
+): Promise<{ messages: FormattedMessage[], hasVisionContent: boolean }> {
+  const formattedMessages: FormattedMessage[] = [];
+  let hasVisionContent = false;
+
+  // Add system message
+  formattedMessages.push({
+    role: 'system',
+    content: systemMessage,
+    metadata: { hasVisionContent: false }
   });
 
-  return messages;
+  // Process all messages except the last one - keep only text content
+  for (let i = 0; i < messages.length - 1; i++) {
+    const message = messages[i];
+    const processedMessage = processMessage(message);
+    if (Array.isArray(processedMessage.content)) {
+      const textContent = processedMessage.content.find(c => c.type === 'text');
+      if (textContent) {
+        formattedMessages.push({
+          role: processedMessage.role,
+          content: textContent.text,
+          metadata: { hasVisionContent: false }
+        });
+      }
+    } else {
+      formattedMessages.push(processedMessage);
+    }
+  }
+
+  // Process the latest message - keep image if present
+  if (messages.length > 0) {
+    const latestMessage = messages[messages.length - 1];
+    const processedMessage = processMessage(latestMessage);
+    formattedMessages.push(processedMessage);
+    if (Array.isArray(processedMessage.content)) {
+      hasVisionContent = processedMessage.content.some(c => c.type === 'image_url');
+    }
+  }
+
+  // Add new image if provided (this would override any image from the latest message)
+  if (imageFile) {
+    formattedMessages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'text' as const,
+          text: latestContent || "What's in this image?"
+        },
+        {
+          type: 'image_url' as const,
+          image_url: {
+            url: imageFile,
+            detail: imageDetail
+          }
+        }
+      ],
+      metadata: { hasVisionContent: true }
+    });
+    hasVisionContent = true;
+  }
+
+  return { messages: formattedMessages, hasVisionContent };
 } 

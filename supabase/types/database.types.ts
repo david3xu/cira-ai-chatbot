@@ -9,6 +9,60 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      chat_attachments: {
+        Row: {
+          chat_id: string
+          created_at: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          message_id: string
+          metadata: Json
+          updated_at: string | null
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          message_id: string
+          metadata?: Json
+          updated_at?: string | null
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          message_id?: string
+          metadata?: Json
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_attachments_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_attachments_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_history: {
         Row: {
           assistant_content: string | null
@@ -423,58 +477,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
-      }
-      chat_attachments: {
-        Row: {
-          id: string;
-          chat_id: string;
-          message_id: string;
-          file_path: string;
-          file_type: string;
-          file_name: string;
-          file_size: number;
-          metadata: Json;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          chat_id: string;
-          message_id: string;
-          file_path: string;
-          file_type: string;
-          file_name: string;
-          file_size: number;
-          metadata?: Json;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          chat_id?: string;
-          message_id?: string;
-          file_path?: string;
-          file_type?: string;
-          file_name?: string;
-          file_size?: number;
-          metadata?: Json;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "chat_attachments_chat_id_fkey";
-            columns: ["chat_id"];
-            referencedRelation: "chats";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "chat_attachments_message_id_fkey";
-            columns: ["message_id"];
-            referencedRelation: "chat_history";
-            referencedColumns: ["id"];
-          }
-        ];
       }
     }
     Views: {

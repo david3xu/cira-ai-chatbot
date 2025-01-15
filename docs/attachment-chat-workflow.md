@@ -5,6 +5,8 @@
 ### 1. Core Features
 1. **File Handling**
    - Image attachments (JPEG, PNG, GIF, WebP)
+     - Vision API integration for image understanding
+     - Image detail control (low/high/auto)
    - Document attachments (PDF, TXT, MD)
    - Size limits and validation
 
@@ -13,11 +15,14 @@
    - Inline previews
    - Progress indicators
    - Error feedback
+   - Image analysis feedback
 
 3. **Integration**
    - Message system compatibility
    - Streaming support
    - Chat history integration
+   - Vision API integration
+   - OpenAI format compatibility
 
 ### 2. Key Components
 ```
@@ -29,10 +34,17 @@ ChatInput
 ChatService
   ├── Upload handling
   ├── Storage management
+  ├── Vision processing
   └── Database operations
+
+MessageProcessor
+  ├── Text formatting
+  ├── Image conversion
+  └── OpenAI format
 
 MessageDisplay
   ├── Image rendering
+  ├── Vision responses
   └── Document handling
 ```
 
@@ -43,7 +55,11 @@ sequenceDiagram
     Input->>Service: Process & upload
     Service->>Storage: Store file
     Service->>Database: Save metadata
-    Service->>Display: Show preview
+    alt is Image
+        Service->>VisionAPI: Process image
+        VisionAPI->>Service: Image understanding
+    end
+    Service->>Display: Show preview/response
 ```
 
 ### 4. Implementation Phases
@@ -61,6 +77,7 @@ sequenceDiagram
    - Message system
    - Chat context
    - Model integration
+   - Vision API integration
 
 4. **Phase 4: Polish**
    - Error handling
@@ -140,7 +157,15 @@ storage/
 interface ChatMessage {
   id: string;
   chatId: string;
-  content: string;
+  userContent: string | {
+    type: 'text' | 'image_url';
+    text?: string;
+    image_url?: {
+      url: string;
+      detail?: 'low' | 'high' | 'auto';
+    };
+  }[];
+  assistantContent: string;
   attachments?: Array<{
     id: string;
     file_path: string;
@@ -153,6 +178,7 @@ interface ChatMessage {
       dimensions?: { width: number; height: number }; // for images
       pageCount?: number; // for documents
       textContent?: string; // for documents
+      imageDetail?: 'low' | 'high' | 'auto'; // for vision API
     };
   }>;
 }
@@ -172,6 +198,7 @@ interface AttachmentState {
       path: string;
       size: number;
       mimeType: string;
+      imageDetail?: 'low' | 'high' | 'auto';
     };
   }>;
 }
@@ -183,40 +210,44 @@ interface ChatInputState {
 }
 ```
 
-#### Database Operations
+#### Message Processing Flow
 ```typescript
-// Attachment Creation
-async function createAttachment(data: {
-  chatId: string;
-  messageId: string;
-  file: File;
-}) {
-  const filePath = `${data.chatId}/${data.file.type.includes('image') ? 'images' : 'documents'}/${data.file.name}`;
-  await uploadToStorage('chat-attachments', filePath, data.file);
-  await supabase.from('chat_attachments').insert({
-    chat_id: data.chatId,
-    message_id: data.messageId,
-    file_path: filePath,
-    file_type: data.file.type,
-    file_name: data.file.name,
-    file_size: data.file.size,
-    metadata: {}
-  });
+// 1. Attachment Processing
+async function processAttachment(attachment: Attachment): Promise<MessageContent | string> {
+  if (attachment.file_type.startsWith('image/')) {
+    return {
+      type: 'image_url',
+      image_url: {
+        url: attachment.file_path,
+        detail: attachment.metadata.imageDetail || 'auto'
+      }
+    };
+  }
+  return `[Attachment: ${attachment.file_name} (${attachment.file_type})]`;
 }
 
-// Attachment Retrieval
-async function getMessageAttachments(messageId: string) {
-  const { data } = await supabase
-    .from('chat_attachments')
-    .select('*')
-    .eq('message_id', messageId);
-  
-  return data?.map(attachment => ({
-    ...attachment,
-    url: supabase.storage
-      .from('chat-attachments')
-      .getPublicUrl(attachment.file_path)
-  }));
+// 2. Message Processing
+async function processMessages(
+  chatHistory: ChatMessage[],
+  prompt: string,
+  systemMessage: string,
+  imageBase64?: string,
+  imageDetail: 'low' | 'high' | 'auto' = 'auto'
+): Promise<FormattedMessage[]> {
+  // Process chat history
+  // Handle attachments
+  // Format for OpenAI
+}
+
+// 3. Vision API Integration
+async function createCompletion(
+  messages: FormattedMessage[],
+  model: string,
+  onToken?: (token: string) => void
+): Promise<string> {
+  // Handle both text and vision content
+  // Stream responses
+  // Process results
 }
 ```
 
@@ -234,6 +265,11 @@ async function getMessageAttachments(messageId: string) {
    ✓ Check progress indicator appears
    ✓ Verify toast notifications
    ✓ Test cancel upload functionality
+
+3. Vision Integration:
+   ✓ Image detail selection
+   ✓ Vision API responses
+   ✓ Error handling
 ```
 
 #### Integration Testing
@@ -243,11 +279,13 @@ async function getMessageAttachments(messageId: string) {
    ✓ Multiple attachments
    ✓ Persistence after reload
    ✓ Chat history loading
+   ✓ Vision API integration
 
 2. Context Preservation:
    ✓ Chat context during upload
    ✓ Message pairing
    ✓ Streaming with attachments
+   ✓ Vision context preservation
 ```
 
 ### 5. Error Handling
@@ -267,14 +305,12 @@ try {
   setIsUploading(false);
 }
 
-// Storage Error Handling
+// Vision API Error Handling
 try {
-  const { error } = await supabase.storage
-    .from('chat-attachments')
-    .upload(path, file);
-  if (error) throw error;
+  const response = await createCompletion(messages, model);
+  if (!response) throw new Error('Failed to process image');
 } catch (error) {
-  handleStorageError(error);
+  handleVisionError(error);
 }
 ```
 
@@ -313,6 +349,7 @@ try {
 - [ ] Basic file upload and download
 - [ ] Image preview generation
 - [ ] Document handling
+- [ ] Vision API integration
 - [ ] Error scenarios
 - [ ] Performance testing
 - [ ] Security validation
@@ -320,5 +357,41 @@ try {
 ### 3. Performance Considerations
 - Progressive loading for large files
 - Image optimization
-- Caching strategy
-- Lazy loading in chat history 
+- Vision API caching
+- Response streaming
+- Lazy loading in chat history
+
+### 4. Data Flow Diagrams
+
+#### Attachment Flow
+```
+User Input
+↓
+Attachment System ────────────┐
+(handles file upload,        │
+storage, and metadata)       │
+                            ↓
+                     Message Processing
+                     (converts attachments
+                      to appropriate format)
+                            ↓
+                     Vision API Call
+                     (handles both stored
+                      and base64 images)
+                            ↓
+                     Chat Message
+                     (stores result with
+                      proper metadata)
+```
+
+#### Vision Chat Flow
+```
+User Input (imageFile + prompt)
+↓
+AnswerQuestionOptions (includes imageDetail)
+↓
+messageProcessor (converts to base64 + OpenAI format)
+↓
+completionService (handles vision API calls)
+↓
+ChatMessage (stores result with metadata)

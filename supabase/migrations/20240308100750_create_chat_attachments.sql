@@ -19,33 +19,34 @@ CREATE INDEX chat_attachments_message_id_idx ON public.chat_attachments(message_
 -- Add RLS policies
 ALTER TABLE public.chat_attachments ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own chat attachments"
-  ON public.chat_attachments
-  FOR SELECT
-  USING (
-    chat_id IN (
-      SELECT id FROM public.chats
-      WHERE user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Users can create attachments for their own chats"
+-- Default user policies (for public access)
+CREATE POLICY "Allow public insert for default user"
   ON public.chat_attachments
   FOR INSERT
   WITH CHECK (
     chat_id IN (
       SELECT id FROM public.chats
-      WHERE user_id = auth.uid()
+      WHERE user_id = COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000')
     )
   );
 
-CREATE POLICY "Users can delete their own attachments"
+CREATE POLICY "Allow public select for default user"
+  ON public.chat_attachments
+  FOR SELECT
+  USING (
+    chat_id IN (
+      SELECT id FROM public.chats
+      WHERE user_id = COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000')
+    )
+  );
+
+CREATE POLICY "Allow public delete for default user"
   ON public.chat_attachments
   FOR DELETE
   USING (
     chat_id IN (
       SELECT id FROM public.chats
-      WHERE user_id = auth.uid()
+      WHERE user_id = COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000')
     )
   );
 
@@ -54,26 +55,24 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('chat-attachments', 'chat-attachments', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage policies for chat attachments
-CREATE POLICY "Users can upload chat attachments"
+-- Storage policies for chat attachments (both public and authenticated)
+CREATE POLICY "Allow public upload chat attachments"
   ON storage.objects
   FOR INSERT
   WITH CHECK (
-    bucket_id = 'chat-attachments' AND
-    auth.role() = 'authenticated'
+    bucket_id = 'chat-attachments'
   );
 
-CREATE POLICY "Users can view chat attachments"
+CREATE POLICY "Allow public view chat attachments"
   ON storage.objects
   FOR SELECT
   USING (
     bucket_id = 'chat-attachments'
   );
 
-CREATE POLICY "Users can delete their own chat attachments"
+CREATE POLICY "Allow public delete chat attachments"
   ON storage.objects
   FOR DELETE
   USING (
-    bucket_id = 'chat-attachments' AND
-    auth.role() = 'authenticated'
+    bucket_id = 'chat-attachments'
   ); 

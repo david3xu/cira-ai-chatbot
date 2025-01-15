@@ -5,8 +5,7 @@
  * - File selection
  * - Upload preview
  * - File type validation
- * - Base64 encoding
- * - Retry mechanism
+ * - Separate handling for images and documents
  */
 
 "use client"
@@ -19,8 +18,11 @@ import { toast } from 'sonner';
 import type { ChatAttachment } from '@/lib/services/ChatAttachmentService';
 
 interface AttachmentButtonProps {
-  messageId?: string;
+  messageId: string;
+  chatId: string;
   onAttach?: (attachment: ChatAttachment) => void;
+  onUploadStart?: () => void;
+  onUploadEnd?: () => void;
 }
 
 interface FilePreview {
@@ -28,24 +30,51 @@ interface FilePreview {
   previewUrl?: string;
   base64?: string;
   type: 'image' | 'document';
+  dimensions?: {
+    width: number;
+    height: number;
+  };
 }
+
+interface ImageMetadata {
+  type: 'image';
+  mimeType: string;
+  dimensions?: {
+    width: number;
+    height: number;
+  };
+  base64Data: string; // Store raw base64 data
+  openai_format?: {  // Make it optional, will be generated when needed
+    type: 'image_url';
+    image_url: {
+      url: string;
+    };
+  };
+}
+
+interface DocumentMetadata {
+  type: 'document';
+  mimeType: string;
+  textContent?: string;
+  pageCount?: number;
+}
+
+type AttachmentMetadata = ImageMetadata | DocumentMetadata;
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
 
-export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps) {
+export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
+  messageId,
+  chatId,
+  onAttach,
+  onUploadStart,
+  onUploadEnd,
+}) => {
   const [isUploading, setIsUploading] = useState(false);
-  const [preview, setPreview] = useState<FilePreview | null>(null);
   const [uploadError, setUploadError] = useState<Error | null>(null);
   const { state } = useChatContext();
-  const currentChat = state.currentChat;
-
-  const clearPreview = useCallback(() => {
-    if (preview?.previewUrl) {
-      URL.revokeObjectURL(preview.previewUrl);
-    }
-    setPreview(null);
-  }, [preview]);
+  const _ = state.currentChat;
 
   const encodeFileToBase64 = useCallback(async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -56,93 +85,116 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     });
   }, []);
 
-  const handleUpload = useCallback(async (file: File, retryCount = 0) => {
-    console.log('AttachmentButton: Starting upload', { file, messageId, chatId: currentChat?.id });
-
-    if (!currentChat?.id) {
+  const handleUpload = useCallback(async (file: File) => {
+    if (!chatId || !messageId) {
+      console.warn('⚠️ No chat or message context for file upload');
       toast.error('Please start a chat first');
       return;
     }
 
-    if (!messageId) {
-      toast.error('Message context is required');
-      return;
-    }
-
     try {
-      setIsUploading(true);
-      setUploadError(null);
-
+      onUploadStart?.();
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('chatId', currentChat.id);
+      formData.append('chatId', chatId);
       formData.append('messageId', messageId);
+      
+      // Create type-specific metadata
+      let metadata: AttachmentMetadata;
+      
+      if (file.type.startsWith('image/')) {
+        // Handle image files - ensure we have base64 data
+        const base64Data = await encodeFileToBase64(file).then(data => data.split(',')[1]);
+        
+        if (!base64Data) {
+          throw new Error('Failed to encode image to base64');
+        }
+        
+        // Get image dimensions
+        const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+          const img = new window.Image();
+          img.onload = () => {
+            resolve({
+              width: img.width,
+              height: img.height
+            });
+          };
+          img.src = URL.createObjectURL(file);
+        });
+        
+        metadata = {
+          type: 'image',
+          mimeType: file.type,
+          dimensions,
+          base64Data,
+        };
+      } else {
+        // Handle document files
+        metadata = {
+          type: 'document',
+          mimeType: file.type,
+          textContent: file.type === 'text/plain' || file.type === 'text/markdown' 
+            ? await file.text().then(text => text.slice(0, 1000))
+            : undefined
+        };
+      }
 
-      console.log('AttachmentButton: Sending upload request', { formData });
+      formData.append('metadata', JSON.stringify(metadata));
+
       const response = await fetch('/api/chat/attachments', {
         method: 'POST',
         body: formData
       });
 
       if (!response.ok) {
-        throw new Error(`Upload failed with status: ${response.status}`);
+        throw new Error('Failed to upload file');
       }
 
       const result = await response.json();
-      console.log('AttachmentButton: Upload response', result);
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      // Call onAttach with the attachment data
       if (result.data) {
-        console.log('AttachmentButton: Calling onAttach with', result.data);
         onAttach?.(result.data);
-        toast.success(`${file.type.startsWith('image/') ? 'Image' : 'Document'} uploaded successfully`);
+        toast.success('File uploaded successfully');
       }
-
-      clearPreview();
-
     } catch (error) {
-      console.error('Error uploading file:', error);
-      setUploadError(error instanceof Error ? error : new Error('Upload failed'));
-      
-      if (retryCount < MAX_RETRIES) {
-        toast.error(`Upload failed, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-        setTimeout(() => {
-          handleUpload(file, retryCount + 1);
-        }, RETRY_DELAY);
-        return;
-      }
-      
-      toast.error(error instanceof Error ? error.message : 'Failed to upload file');
+      console.error('❌ Failed to upload file:', error);
+      setUploadError(new Error('Failed to upload file'));
+      toast.error('Failed to upload file');
     } finally {
-      if (retryCount === MAX_RETRIES || !uploadError) {
-        setIsUploading(false);
+      onUploadEnd?.();
+    }
+  }, [chatId, messageId, onAttach, onUploadStart, onUploadEnd, encodeFileToBase64]);
+
+  const handleFileChange = useCallback(async (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const files = input.files;
+    if (!files?.length) return;
+
+    if (!chatId || !messageId) {
+      console.warn('⚠️ No chat or message context for file upload');
+      toast.error('Please start a chat first');
+      return;
+    }
+
+    console.log('📎 Processing files:', { count: files.length });
+
+    // Convert FileList to Array
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      try {
+        await handleUpload(file);
+      } catch (error) {
+        console.error('❌ Failed to process file:', error);
+        toast.error('Failed to process file');
       }
     }
-  }, [currentChat?.id, messageId, onAttach, uploadError, clearPreview]);
 
-  const createPreview = useCallback(async (file: File) => {
-    console.log('AttachmentButton: Creating preview for file', { file });
-    const preview: FilePreview = {
-      file,
-      type: file.type.startsWith('image/') ? 'image' : 'document'
-    };
-    
-    if (preview.type === 'image') {
-      preview.previewUrl = URL.createObjectURL(file);
-      preview.base64 = await encodeFileToBase64(file);
-      console.log('AttachmentButton: Created image preview', { 
-        previewUrl: preview.previewUrl,
-        hasBase64: !!preview.base64
-      });
+    // Safely clear the input
+    try {
+      input.value = '';
+    } catch (error) {
+      console.warn('Failed to clear file input:', error);
     }
-    
-    setPreview(preview);
-    handleUpload(file);  // Automatically start upload when preview is created
-  }, [encodeFileToBase64, handleUpload]);
+  }, [chatId, messageId, handleUpload]);
 
   const handleClick = useCallback(() => {
     // Create a file input element
@@ -162,24 +214,19 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     ].join(',');
 
     // Handle file selection
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        createPreview(file);
-      }
-    };
+    input.onchange = handleFileChange;
 
     // Trigger file selection
     input.click();
-  }, [createPreview]);
+  }, [handleFileChange]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file) {
-      createPreview(file);
+      handleUpload(file);
     }
-  }, [createPreview]);
+  }, [handleUpload]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -189,60 +236,22 @@ export function AttachmentButton({ messageId, onAttach }: AttachmentButtonProps)
     <div
       onDrop={handleDrop}
       onDragOver={handleDragOver}
-      className="relative flex flex-col"
+      className="relative"
     >
-      {preview ? (
-        <div className="flex items-center gap-2 p-2 mb-2 bg-gray-800/50 rounded-lg">
-          {preview.type === 'image' && preview.previewUrl ? (
-            <div className="relative group">
-              <img 
-                src={preview.previewUrl} 
-                alt="Preview" 
-                className="w-20 h-20 object-cover rounded-md"
-              />
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                <button
-                  onClick={clearPreview}
-                  className="p-1 bg-gray-700 rounded-full hover:bg-gray-600"
-                  disabled={isUploading}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 pr-8 relative">
-              <File className="w-4 h-4" />
-              <span className="text-sm truncate max-w-[150px]">
-                {preview.file.name}
-              </span>
-              <div className="absolute right-0 flex items-center gap-1">
-                <button
-                  onClick={clearPreview}
-                  className="p-1 bg-gray-700 rounded-full hover:bg-gray-600"
-                  disabled={isUploading}
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          )}
-          {isUploading && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-lg">
-              <Loader2 className="w-6 h-6 animate-spin" />
-            </div>
-          )}
-        </div>
-      ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleClick}
-          className="hover:bg-gray-800/50"
-        >
-          <Paperclip className="w-4 h-4" />
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={handleClick}
+        disabled={isUploading}
+        className="hover:bg-gray-700/50"
+      >
+        {isUploading ? (
+          <Loader2 className="w-5 h-5 animate-spin" />
+        ) : (
+          <Paperclip className="w-5 h-5" />
+        )}
+      </Button>
     </div>
   );
 }

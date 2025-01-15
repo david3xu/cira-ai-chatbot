@@ -125,7 +125,26 @@ export class ChatService extends ApiService {
       if (dbError) throw dbError;
       if (!newMessages?.length) throw new Error('Failed to create message pair');
 
+      // Update message metadata if provided
+      if (options.metadata) {
+        const { error: updateError } = await this.supabase
+          .from('chat_history')
+          .update({ metadata: options.metadata })
+          .eq('message_pair_id', messagePairId);
+
+        if (updateError) {
+          console.error('Failed to update message metadata:', updateError);
+          // Don't throw here, continue with the message even if metadata update fails
+        }
+      }
+
       const transformedMessage = transformDatabaseMessage(newMessages[0]);
+
+      console.log('🔍 [ChatService.sendMessage] Message pair created:', {
+        messagePairId,
+        hasMetadata: !!options.metadata,
+        attachmentsCount: options.metadata?.attachments?.length ?? 0
+      });
 
       console.log('🔍 [ChatService.sendMessage] Sending to API:', {
         model: options.model,

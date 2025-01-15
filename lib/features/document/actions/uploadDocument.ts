@@ -1,6 +1,6 @@
 import { Document, DocumentError, DocumentMetadata } from '@/lib/types/document';
 import { processDocument, ProcessDocumentOptions } from './processDocument';
-import { supabase } from '@/lib/supabase/client';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { STORAGE_CONFIG, DOCUMENT_DEFAULTS } from '../config/constants';
 
 interface DocumentUploadOptions {
@@ -40,6 +40,7 @@ function sanitizeFileName(fileName: string): string {
  * Ensures the storage bucket exists, creates it if it doesn't
  */
 async function ensureBucketExists(): Promise<void> {
+  const supabase = getSupabaseClient();
   try {
     // Try to get the bucket first
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
@@ -97,6 +98,7 @@ export async function uploadDocument(
   file: File,
   options: DocumentUploadOptions = {}
 ): Promise<Document> {
+  const supabase = getSupabaseClient();
   try {
     const { onProgress } = options;
     onProgress?.(file.name, 0, 'Validating file...');

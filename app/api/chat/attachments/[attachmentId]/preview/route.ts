@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
+const DEFAULT_USER_ID = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || '00000000-0000-0000-0000-000000000000';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { attachmentId: string } }
@@ -19,13 +21,11 @@ export async function GET(
     // Initialize Supabase client
     const supabase = createRouteHandlerClient({ cookies });
 
-    // Get current user
+    // Get current user or use default
+    let userId = DEFAULT_USER_ID;
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    if (user && !authError) {
+      userId = user.id;
     }
 
     // Get attachment details
@@ -56,7 +56,7 @@ export async function GET(
       );
     }
 
-    if (chat.user_id !== user.id) {
+    if (chat.user_id !== userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }

@@ -26,10 +26,22 @@ export function ImageUpload({ onClose }: ImageUploadProps) {
       return
     }
 
-    setPreview(URL.createObjectURL(file))
+    const previewUrl = URL.createObjectURL(file)
+    setPreview(previewUrl)
     await uploadFiles([file])
+    URL.revokeObjectURL(previewUrl)
+    setPreview(null)
     onClose()
   }
+
+  React.useEffect(() => {
+    return () => {
+      if (preview) {
+        URL.revokeObjectURL(preview)
+        setPreview(null)
+      }
+    }
+  }, [preview])
 
   return (
     <div className="space-y-4 p-4">

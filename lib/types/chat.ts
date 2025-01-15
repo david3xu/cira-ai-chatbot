@@ -1,6 +1,4 @@
-import { ChatTableRow, ChatMessageTableRow } from './database';
 import { ChatAction } from './chat-action';
-import type { ChatAttachment } from '@/lib/services/ChatAttachmentService';
 
 // Application interface extending the database type
 export interface Chat {
@@ -29,7 +27,7 @@ export interface ChatMessage {
   id: string;
   chatId: string;
   messagePairId: string;
-  userContent: string;
+  userContent: string | MessageContent[];
   assistantContent: string;
   userRole: 'user' | 'system';
   assistantRole: 'assistant' | 'system';
@@ -38,9 +36,25 @@ export interface ChatMessage {
   status: 'sending' | 'streaming' | 'success' | 'failed';
   createdAt: string;
   updatedAt: string;
-  customPrompt?: string | null | undefined;
+  customPrompt?: string | null;
   metadata?: {
-    attachments?: ChatAttachment[];
+    attachments?: Array<{
+      id: string;
+      filePath: string;
+      fileType: string;
+      fileName: string;
+      fileSize: number;
+      metadata: {
+        mimeType: string;
+        position?: number;
+        dimensions?: { width: number; height: number };
+        pageCount?: number;
+        textContent?: string;
+        imageDetail?: 'low' | 'high' | 'auto';
+        base64Data?: string;
+      };
+    }>;
+    hasVisionContent?: boolean;
     [key: string]: any;
   } | null;
   streaming?: {
@@ -94,4 +108,25 @@ export type NewMessagePayload = {
 // Import these types from their respective files instead of defining them here
 export type { ChatAction } from './chat-action';
 export type { ChatState } from './chat-state';
+
+export type MessageContent = {
+  type: 'text';
+  text: string;
+} | {
+  type: 'image_url';
+  image_url: {
+    url: string;
+    detail: 'low' | 'high' | 'auto';
+  };
+};
+
+export interface FormattedMessage {
+  role: 'user' | 'system' | 'assistant';
+  content: string | MessageContent[];
+  metadata?: {
+    hasVisionContent?: boolean;
+    [key: string]: any;
+  };
+  type?: 'text' | 'image';
+}
   

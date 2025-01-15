@@ -1,5 +1,5 @@
 import { Document, DocumentError, DocumentMetadata, DocumentStatus } from '@/lib/types/document';
-import { supabase } from '@/lib/supabase/client';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { getTextChunks, getEmbeddings } from '../utils/textProcessing';
 import type { Database } from '@/supabase/types/database.types';
 
@@ -21,6 +21,7 @@ export async function processDocument(
   file: File,
   options: ProcessDocumentOptions
 ): Promise<Document> {
+  const supabase = getSupabaseClient();
   try {
     console.log('🔄 Processing document:', {
       name: file.name,

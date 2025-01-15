@@ -1,6 +1,22 @@
 // lib/types/database.ts
 // These types match your Supabase/database tables directly
+import { MessageContent } from './chat';
 import { ChatRow, MessageRow as SupabaseMessageRow, DocumentRow } from './supabase'
+
+// export interface MessageContent {
+//   type: 'text' | 'image_url';
+//   text?: string;
+//   image_url?: {
+//     url: string;
+//     detail?: 'low' | 'high' | 'auto';
+//   };
+// }
+
+export interface FormattedMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string | MessageContent[];
+  metadata?: Record<string, any>;
+}
 
 // Now these types are derived from your actual DB schema
 export type DBChat = ChatTableRow

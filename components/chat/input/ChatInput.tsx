@@ -26,7 +26,8 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
   const [content, setContent] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [messagePairId, setMessagePairId] = useState<string | undefined>(undefined);
+  const [isUploading, setIsUploading] = useState(false);
+  const [messagePairId] = useState<string>(() => crypto.randomUUID());
   const { sendMessage } = useChatMessage();
   const { state, dispatch } = useChatContext();
   const domainContext = useDomainContext();
@@ -34,9 +35,106 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
   const currentChat: Chat | null = state.currentChat;
 
   const handleAttachment = useCallback((attachment: ChatAttachment) => {
-    console.log('ChatInput: Adding attachment', attachment);
+    console.log('📎 Adding attachment to message:', {
+      attachment,
+      currentAttachments: attachments.length
+    });
     setAttachments(prev => [...prev, attachment]);
+  }, [attachments.length]);
+
+  const handleUploadStart = useCallback(() => {
+    setIsUploading(true);
   }, []);
+
+  const handleUploadEnd = useCallback(() => {
+    setIsUploading(false);
+  }, []);
+
+  // Handle pasted files
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    console.log('📋 Paste event detected:', { itemCount: items.length });
+
+    // Convert items to array to fix iteration issue
+    const itemsArray = Array.from(items);
+    for (const item of itemsArray) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault(); // Prevent default paste behavior for images
+        
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        console.log('🖼️ Processing pasted image:', {
+          name: file.name,
+          type: file.type,
+          size: file.size
+        });
+
+        // Create a File object with a proper name
+        const imageFile = new File(
+          [file], 
+          `pasted-image-${Date.now()}.${file.type.split('/')[1] || 'png'}`,
+          { type: file.type }
+        );
+
+        // Convert file to base64
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = reader.result?.toString().split(',')[1];
+            resolve(base64 || '');
+          };
+          reader.readAsDataURL(imageFile);
+        });
+
+        // Use the existing AttachmentButton's upload functionality
+        if (!messagePairId || !currentChat?.id) {
+          console.warn('⚠️ No message or chat context for paste');
+          toast.error('Please start a chat first');
+          return;
+        }
+
+        try {
+          setIsUploading(true);
+          const formData = new FormData();
+          formData.append('file', imageFile);
+          formData.append('chatId', currentChat.id);
+          formData.append('messageId', messagePairId);
+          formData.append('metadata', JSON.stringify({ base64Data }));
+
+          const response = await fetch('/api/chat/attachments', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to upload pasted image');
+          }
+
+          const result = await response.json();
+          if (result.data) {
+            // Ensure base64Data is included in the attachment metadata
+            const attachment = {
+              ...result.data,
+              metadata: {
+                ...result.data.metadata,
+                base64Data
+              }
+            };
+            handleAttachment(attachment);
+            toast.success('Image pasted successfully');
+          }
+        } catch (error) {
+          console.error('❌ Failed to process pasted image:', error);
+          toast.error('Failed to process pasted image');
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    }
+  }, [currentChat?.id, messagePairId, handleAttachment]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +142,11 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
 
     console.log('ChatInput: Submitting message with attachments', { content, attachments });
     const messageContent = content;
+    const messageAttachments = [...attachments];
+    
+    // Clear both text and attachments immediately
     setContent('');
+    setAttachments([]);
     
     try {
       setIsSending(true);
@@ -107,16 +209,23 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
       }
 
       // Send message with attachments in metadata
-      const metadata = attachments.length > 0 ? { attachments } : undefined;
-      console.log('ChatInput: Sending message with metadata', { metadata });
+      const metadata = messageAttachments.length > 0 ? { attachments: messageAttachments } : undefined;
+      console.log('📤 Sending message with attachments:', {
+        messageContent,
+        metadata,
+        attachmentsCount: messageAttachments.length,
+        attachmentDetails: messageAttachments.map(att => ({
+          id: att.id,
+          fileName: att.fileName,
+          fileType: att.fileType
+        }))
+      });
       
       await sendMessage(messageContent, { metadata });
-
-      // Clear attachments after successful send
-      setAttachments([]);
+      console.log('✅ Message sent successfully with attachments');
       
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('❌ Failed to send message with attachments:', error);
       toast.error('Failed to send message');
     } finally {
       setIsSending(false);
@@ -140,16 +249,6 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
       e.target.style.height = `${e.target.scrollHeight}px`;
     }
   }, []);
-
-  // Generate message pair ID for attachments
-  const getMessagePairId = useCallback(() => {
-    if (!messagePairId) {
-      const newId = crypto.randomUUID();
-      setMessagePairId(newId);
-      return newId;
-    }
-    return messagePairId;
-  }, [messagePairId]);
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col w-full gap-2">
@@ -191,25 +290,30 @@ export const ChatInput = memo(function ChatInput({ onCreateChat }: ChatInputProp
 
       <div className="flex items-center gap-2 w-full">
         <AttachmentButton 
-          messageId={messagePairId} 
-          onAttach={handleAttachment} 
+          messageId={messagePairId}
+          chatId={currentChat?.id || ''}
+          onAttach={handleAttachment}
+          onUploadStart={handleUploadStart}
+          onUploadEnd={handleUploadEnd}
         />
         <textarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
+          onPaste={handlePaste}
+          placeholder="Type a message or paste an image..."
           rows={1}
           className={cn(
             "flex-1 resize-none bg-transparent border rounded-lg p-2",
             "focus:outline-none focus:ring-1 focus:ring-blue-500",
-            "placeholder:text-gray-400"
+            "placeholder:text-gray-400",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
           )}
-          disabled={isStreaming || isSending}
+          disabled={isStreaming || isSending || isUploading}
         />
         <button
           type="submit"
-          disabled={(!content.trim() && attachments.length === 0) || isStreaming || isSending}
+          disabled={(!content.trim() && attachments.length === 0) || isStreaming || isSending || isUploading}
           className={cn(
             "p-2 rounded-lg",
             "hover:bg-gray-700/50 disabled:hover:bg-transparent",

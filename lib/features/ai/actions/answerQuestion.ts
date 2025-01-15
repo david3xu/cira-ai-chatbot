@@ -13,15 +13,17 @@
  * - Error handling and retries
  * - Progress tracking
  * - Message formatting and storage
+ * - Image support
  */
 
 import { performHybridSearch } from '@/lib/features/ai/utils/embedding';
 import { structureResponse } from '@/lib/features/ai/utils/responseFormatter';
 import { processMessages } from '../services/messageProcessor';
 import { createCompletion } from '../services/completionService';
-import { getContextualPrompt, getSystemMessage, formatConversationByDomain } from '../prompts/systemMessages';
+import { getContextualPrompt, getSystemMessage, formatConversationByDomain } from '@/lib/features/ai/prompts/systemMessages';
 import { ChatMessage } from '@/lib/types';
 import { DOMINATION_FIELDS, DominationField } from '../config/constants';
+import { FormattedMessage, MessageContent } from '@/lib/types/chat';
 
 interface AnswerQuestionResponse {
   content: string;
@@ -35,6 +37,7 @@ interface AnswerQuestionOptions {
   chatId: string;
   customPrompt?: string | null;
   imageFile?: string;
+  imageDetail?: 'low' | 'high' | 'auto';
   model?: string;
   skipStorage?: boolean;
 }
@@ -75,13 +78,14 @@ async function generateChatTopic(
 }
 
 export async function answerQuestion(options: AnswerQuestionOptions): Promise<AnswerQuestionResponse> {
-
   const {
     messages,
     onToken,
     dominationField,
     customPrompt,
     chatId,
+    imageFile,
+    imageDetail = 'auto',
     model
   } = options;
 
@@ -91,21 +95,27 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     chatId,
     messageCount: messages.length,
     hasCustomPrompt: !!customPrompt,
+    hasImage: !!imageFile,
     customPromptPreview: customPrompt
   });
 
   try {
-
     // Get the latest user message content, ensure it's not null
     const latestUserContent = messages[messages.length - 1]?.userContent;
     if (!latestUserContent) {
       throw new Error('No user message content found');
     }
 
+    // Convert array content to text where needed
+    const getTextContent = (content: string | MessageContent[]) => 
+      Array.isArray(content) 
+        ? content.map(c => c.type === 'text' ? c.text : '').join(' ')
+        : content;
+
     // Format previous conversation based on domination field
     const previousConvo = messages
       .map(msg => {
-        const userContent = msg.userContent || '';
+        const userContent = getTextContent(msg.userContent || '');
         const assistantContent = msg.assistantContent || '';
         return formatConversationByDomain(
           dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
@@ -120,7 +130,7 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     if (dominationField && dominationField !== DOMINATION_FIELDS.NORMAL_CHAT) {
       try {
         const searchResults = await performHybridSearch(
-          latestUserContent,
+          getTextContent(latestUserContent),
           dominationField,
           5, // match_count
           1.0, // full_text_weight
@@ -130,7 +140,6 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
         contextText = searchResults.map(doc => doc.content).join('\n');
       } catch (error) {
         console.warn('Warning: Hybrid search failed, continuing without context:', error);
-        // Continue without context rather than failing the whole request
       }
     }
 
@@ -147,25 +156,26 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     const prompt = getContextualPrompt(
       dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
       previousConvo,
-      latestUserContent,
+      getTextContent(latestUserContent),
       contextText
-    );
-
-    // Process messages for context - don't pass custom prompt since it's in system message
-    const processedMessages = await processMessages(
-      messages,
-      latestUserContent,
-      systemMessage
     );
 
     // Create completion with proper error handling
     let fullResponse = '';
     try {
+      const { messages: processedMessages, hasVisionContent } = await processMessages(
+        messages,
+        getTextContent(latestUserContent),
+        systemMessage,
+        imageFile,
+        imageDetail
+      );
 
       fullResponse = await createCompletion(
         processedMessages,
         model || 'default',
-        onToken
+        onToken,
+        hasVisionContent
       );
       
       if (!fullResponse?.trim()) {
@@ -175,10 +185,12 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
           latestUserContent,
           contextText
         );
+        // No vision content in retry
         fullResponse = await createCompletion(
           [{ role: 'user', content: retryPrompt }],
           model || 'default',
-          onToken
+          onToken,
+          false // No vision content in retry
         );
       }
     } catch (error) {
@@ -191,7 +203,11 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     }
 
     // Generate chat topic if needed
-    const chat_topic = await generateChatTopic(messages, latestUserContent, model || 'default');
+    const chat_topic = await generateChatTopic(
+      messages,
+      getTextContent(latestUserContent),
+      model || 'default'
+    );
 
     const structuredResponse = {
       content: structureResponse(fullResponse),

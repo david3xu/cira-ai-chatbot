@@ -9,6 +9,9 @@ export interface AnswerQuestionOptions {
   chatId?: string;
   model?: string;
   contextText?: string;
+  imageFile?: string;
+  imageDetail?: 'low' | 'high' | 'auto';
+  skipStorage?: boolean;
 }
 
 export interface AnswerQuestionResponse {
