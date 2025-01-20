@@ -84,15 +84,7 @@ const MessageList: React.FC<MessageListProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {messages.map((message: ChatMessage) => {
-        // Log each message being rendered
-        console.log('🎯 Rendering message:', {
-          id: message.id,
-          hasAttachments: (message.metadata?.attachments?.length ?? 0) > 0,
-          attachments: message.metadata?.attachments,
-          isStreaming: isStreaming && message.id === streamingMessage?.id
-        });
-        
+      {messages.map((message: ChatMessage) => {   
         return (
           <MemoizedMessageItem 
             key={message.id} 

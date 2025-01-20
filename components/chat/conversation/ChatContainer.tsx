@@ -51,8 +51,10 @@ export const ChatContainer = memo(function ChatContainer({ chatId, onCreateChat 
   return (
     <div className="chat-container h-screen flex flex-col">
       <ChatHeader />
-      <div className="flex-1 overflow-y-auto">
-        <ChatBody />
+      <div className="flex-1 relative overflow-hidden">
+        <div className="absolute inset-0">
+          <ChatBody />
+        </div>
       </div>
       <div className="bg-gray-900">
         <div className="max-w-[1200px] mx-auto w-full px-4 py-4">

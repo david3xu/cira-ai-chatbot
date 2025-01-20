@@ -74,7 +74,8 @@ export const ChatBody = memo(function ChatBody() {
       messageId: message.id,
       hasAttachments: (message.metadata?.attachments?.length ?? 0) > 0,
       attachments: message.metadata?.attachments,
-      content: message.assistantContent.slice(0, 100) + '...'
+      content: message.assistantContent.slice(0, 100) + '...',
+      isStreaming: message.streaming?.isActive
     });
 
     return message;
@@ -86,28 +87,59 @@ export const ChatBody = memo(function ChatBody() {
     const currentContent = lastMessage?.assistantContent || '';
     const hasNewMessage = messages.length > prevMessagesLengthRef.current;
     const hasNewContent = currentContent !== lastContentRef.current;
+    const hasAttachments = (lastMessage?.metadata?.attachments?.length ?? 0) > 0;
+    const forceScroll = hasAttachments && messages.length > 0;
+    const isActivelyStreaming = isStreaming && lastMessage?.status === 'streaming';
 
-    // Log content changes
-    console.log('📝 ChatBody: Content changes', {
+    // Log scroll trigger conditions
+    console.log('🔄 ChatBody: Scroll conditions', {
       hasNewMessage,
       hasNewContent,
       isStreaming,
-      lastMessageId: lastMessage?.id,
-      hasAttachments: (lastMessage?.metadata?.attachments?.length ?? 0) > 0
+      isActivelyStreaming,
+      hasAttachments,
+      forceScroll,
+      currentContent: currentContent.slice(-50),
+      lastContent: lastContentRef.current.slice(-50),
+      shouldScroll: hasNewMessage || hasNewContent || forceScroll || isActivelyStreaming,
+      messageStatus: lastMessage?.status
     });
 
-    // Scroll if:
-    // 1. New message added
-    // 2. Assistant content changed
-    // 3. Streaming started
-    if (hasNewMessage || hasNewContent || (isStreaming && !lastContentRef.current)) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Always scroll when there's new content or streaming
+    const shouldScroll = hasNewMessage || hasNewContent || forceScroll || isActivelyStreaming;
+
+    if (shouldScroll && messagesEndRef.current) {
+      // Immediate scroll for streaming, smooth scroll otherwise
+      const scrollBehavior: ScrollBehavior = isActivelyStreaming ? 'auto' : 'smooth';
+      
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: scrollBehavior,
+          block: 'end'
+        });
+        
+        // Double-check scroll position after a short delay
+        setTimeout(() => {
+          const isAtBottom = Math.abs(
+            (messagesEndRef.current?.getBoundingClientRect().bottom || 0) - 
+            window.innerHeight
+          ) < 10;
+          
+          if (!isAtBottom) {
+            messagesEndRef.current?.scrollIntoView({
+              behavior: 'auto',
+              block: 'end'
+            });
+          }
+        }, 100);
+      });
     }
 
-    // Update refs
+    // Update refs after scroll check
     prevMessagesLengthRef.current = messages.length;
     lastContentRef.current = currentContent;
-  }, [messages, isStreaming, state.streamingMessage]);
+  }, [messages, isStreaming]);
 
   // Memoize handlers to prevent unnecessary re-renders
   const handleDelete = useCallback((message: ChatMessage) => {
@@ -119,15 +151,19 @@ export const ChatBody = memo(function ChatBody() {
   }, [updateMessage]);
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto p-4">
-      <MessageList 
-        messages={messages}
-        isStreaming={isStreaming}
-        streamingMessage={streamingMessage}
-        onDelete={handleDelete}
-        onEdit={handleEdit}
-      />
-      <div ref={messagesEndRef} className="h-[1px]" />
+    <div className="h-full overflow-y-auto">
+      <div className="flex flex-col min-h-full p-4">
+        <div className="flex-1">
+          <MessageList 
+            messages={messages}
+            isStreaming={isStreaming}
+            streamingMessage={streamingMessage}
+            onDelete={handleDelete}
+            onEdit={handleEdit}
+          />
+        </div>
+        <div ref={messagesEndRef} className="h-[1px]" />
+      </div>
     </div>
   );
 }); 
