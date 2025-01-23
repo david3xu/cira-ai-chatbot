@@ -8,7 +8,7 @@
  */
 
 import { ApiService } from './base/ApiService';
-import type { Chat, ChatOptions, ChatStreamOptions, ChatMessage, ChatResponse } from '@/lib/types/chat';
+import type { Chat, ChatOptions, ChatStreamOptions, ChatMessage, ChatResponse, MessageContent } from '@/lib/types/chat';
 import { CircuitBreaker } from '@/lib/utils/circuit-breaker';
 import { ChatError, ErrorCodes } from '@/lib/types/errors';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -18,7 +18,21 @@ import { DEFAULT_PROMPT } from '@/lib/features/ai/config/constants';
 import { ChatAction } from '@/lib/types/chat-action';
 
 interface MessageResponse extends Response {
-  messages?: ChatMessage[];
+  messages?: {
+    id: string;
+    chatId: string;
+    messagePairId: string;
+    userContent: string | MessageContent[];
+    assistantContent: string;
+    userRole: 'user' | 'system';
+    assistantRole: 'assistant' | 'system';
+    status: 'sending' | 'streaming' | 'success' | 'failed';
+    model: string;
+    dominationField: string;
+    createdAt: string;
+    updatedAt: string;
+    metadata?: Record<string, any>;
+  }[];
 }
 
 export class ChatService extends ApiService {
@@ -236,7 +250,7 @@ export class ChatService extends ApiService {
                       id: messagePairId,
                       chatId: options.chatId,
                       messagePairId,
-                      userContent: content,
+                      userContent: Array.isArray(content) ? content : content,
                       assistantContent: streamingContent,
                       userRole: 'user',
                       assistantRole: 'assistant',
@@ -325,7 +339,7 @@ export class ChatService extends ApiService {
                       id: messagePairId,
                       chatId: options.chatId,
                       messagePairId,
-                      userContent: content,
+                      userContent: Array.isArray(content) ? content : content,
                       assistantContent: streamingContent,
                       userRole: 'user',
                       assistantRole: 'assistant',
@@ -356,19 +370,12 @@ export class ChatService extends ApiService {
           reader.releaseLock();
         }
 
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          headers: new Headers(),
-          redirected: false,
-          type: 'default',
-          url: '',
+        return new Response(JSON.stringify({ 
           messages: [{
             id: messagePairId,
             chatId: options.chatId,
             messagePairId,
-            userContent: content,
+            userContent: Array.isArray(content) ? content : content,
             assistantContent: streamingContent,
             userRole: 'user',
             assistantRole: 'assistant',
@@ -378,18 +385,12 @@ export class ChatService extends ApiService {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             metadata: options.metadata || {}
-          }],
-          json: async () => ({ messages: [transformedMessage] }),
-          text: async () => JSON.stringify({ messages: [transformedMessage] }),
-          blob: async () => new Blob([JSON.stringify({ messages: [transformedMessage] })]),
-          formData: async () => {
-            throw new Error('FormData not supported');
-          },
-          arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ messages: [transformedMessage] })).buffer,
-          bodyUsed: false,
-          body: null,
-          clone: function() { return this; }
-        } as MessageResponse;
+          }]
+        }), {
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers()
+        }) as MessageResponse;
 
       } catch (error) {
         // Cancel message pair using stored procedure
@@ -759,7 +760,7 @@ export class ChatService extends ApiService {
       const { error } = await this.supabase
         .rpc('create_message_pair', {
           p_message_pair_id: message.messagePairId,
-          p_content: message.userContent,
+          p_content: message.userContent as string,
           p_model: message.model,
           p_chat_id: message.chatId,
           p_domination_field: message.dominationField
