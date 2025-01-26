@@ -17,22 +17,9 @@ import { transformDatabaseMessage } from '@/lib/utils/messageTransformer';
 import { DEFAULT_PROMPT } from '@/lib/features/ai/config/constants';
 import { ChatAction } from '@/lib/types/chat-action';
 
-interface MessageResponse extends Response {
-  messages?: {
-    id: string;
-    chatId: string;
-    messagePairId: string;
-    userContent: string | MessageContent[];
-    assistantContent: string;
-    userRole: 'user' | 'system';
-    assistantRole: 'assistant' | 'system';
-    status: 'sending' | 'streaming' | 'success' | 'failed';
-    model: string;
-    dominationField: string;
-    createdAt: string;
-    updatedAt: string;
-    metadata?: Record<string, any>;
-  }[];
+interface MessageResponse extends Omit<Response, 'clone'> {
+  messages?: ChatMessage[];
+  clone: () => MessageResponse;
 }
 
 export class ChatService extends ApiService {
@@ -77,13 +64,15 @@ export class ChatService extends ApiService {
   );
 
   // Core message operations
-  static async sendMessage(content: string, options?: ChatStreamOptions): Promise<MessageResponse> {
-    if (!content.trim()) {
+  static async sendMessage(content: string | MessageContent[], options?: ChatStreamOptions): Promise<MessageResponse> {
+    if (!content || (typeof content === 'string' && !content.trim())) {
       throw new ChatError(
         'Message content is required',
         ErrorCodes.VALIDATION_ERROR
       );
     }
+
+    const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
 
     if (!options?.chatId) {
       throw new ChatError(
@@ -128,7 +117,7 @@ export class ChatService extends ApiService {
       const { data: newMessages, error: dbError } = await this.supabase
         .rpc('create_message_pair', {
           p_message_pair_id: messagePairId,
-          p_content: content,
+          p_content: contentStr,
           p_model: options.model,
           p_chat_id: options.chatId,
           p_domination_field: options.dominationField,
@@ -175,7 +164,7 @@ export class ChatService extends ApiService {
             'Accept': 'text/event-stream'
           },
           body: JSON.stringify({ 
-            content, 
+            content: contentStr, 
             options: {
               ...options,
               messagePairId,
@@ -250,7 +239,7 @@ export class ChatService extends ApiService {
                       id: messagePairId,
                       chatId: options.chatId,
                       messagePairId,
-                      userContent: Array.isArray(content) ? content : content,
+                      userContent: contentStr,
                       assistantContent: streamingContent,
                       userRole: 'user',
                       assistantRole: 'assistant',
@@ -339,7 +328,7 @@ export class ChatService extends ApiService {
                       id: messagePairId,
                       chatId: options.chatId,
                       messagePairId,
-                      userContent: Array.isArray(content) ? content : content,
+                      userContent: contentStr,
                       assistantContent: streamingContent,
                       userRole: 'user',
                       assistantRole: 'assistant',
@@ -370,12 +359,19 @@ export class ChatService extends ApiService {
           reader.releaseLock();
         }
 
-        return new Response(JSON.stringify({ 
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers(),
+          redirected: false,
+          type: 'default',
+          url: '',
           messages: [{
             id: messagePairId,
             chatId: options.chatId,
             messagePairId,
-            userContent: Array.isArray(content) ? content : content,
+            userContent: contentStr,
             assistantContent: streamingContent,
             userRole: 'user',
             assistantRole: 'assistant',
@@ -385,12 +381,18 @@ export class ChatService extends ApiService {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             metadata: options.metadata || {}
-          }]
-        }), {
-          status: 200,
-          statusText: 'OK',
-          headers: new Headers()
-        }) as MessageResponse;
+          }],
+          json: async () => ({ messages: [transformedMessage] }),
+          text: async () => JSON.stringify({ messages: [transformedMessage] }),
+          blob: async () => new Blob([JSON.stringify({ messages: [transformedMessage] })]),
+          formData: async () => {
+            throw new Error('FormData not supported');
+          },
+          arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ messages: [transformedMessage] })).buffer,
+          bodyUsed: false,
+          body: null,
+          clone: function() { return this as MessageResponse; }
+        } as unknown as MessageResponse;
 
       } catch (error) {
         // Cancel message pair using stored procedure
@@ -757,10 +759,14 @@ export class ChatService extends ApiService {
 
   static async storeMessage(message: ChatMessage): Promise<void> {
     try {
+      const contentToStore = Array.isArray(message.userContent) 
+        ? JSON.stringify(message.userContent)
+        : message.userContent;
+
       const { error } = await this.supabase
         .rpc('create_message_pair', {
           p_message_pair_id: message.messagePairId,
-          p_content: message.userContent as string,
+          p_content: contentToStore,
           p_model: message.model,
           p_chat_id: message.chatId,
           p_domination_field: message.dominationField
