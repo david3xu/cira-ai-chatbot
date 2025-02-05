@@ -14,26 +14,42 @@ interface DocumentUploadOptions {
  * Get the correct MIME type for a file
  */
 function getMimeType(file: File, isMarkdown: boolean): string {
-  if (isMarkdown) {
+  // Always return text/markdown for markdown files
+  if (isMarkdown || file.name.toLowerCase().endsWith('.md')) {
     return 'text/markdown';
   }
   if (file.type === 'application/pdf') {
     return 'application/pdf';
   }
-  // Default to text/markdown for .md files
-  if (file.name.toLowerCase().endsWith('.md')) {
-    return 'text/markdown';
+  if (file.type === 'application/json' || file.name.toLowerCase().endsWith('.json')) {
+    return 'application/json';
   }
-  return file.type;
+  // For other types, use the file's type or default to text/plain
+  return file.type || 'text/plain';
 }
 
 /**
- * Sanitizes a filename by removing special characters and spaces
+ * Sanitizes a filename while preserving the file extension
  */
 function sanitizeFileName(fileName: string): string {
-  return fileName
-    .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace special chars with underscore
-    .replace(/_{2,}/g, '_'); // Replace multiple underscores with single
+  // Split filename into name and extension
+  const lastDotIndex = fileName.lastIndexOf('.');
+  const hasExtension = lastDotIndex > 0;
+  const namePart = hasExtension ? fileName.slice(0, lastDotIndex) : fileName;
+  const extPart = hasExtension ? fileName.slice(lastDotIndex + 1) : '';
+
+  // Sanitize the name part
+  const sanitizedName = namePart
+    .replace(/[^a-zA-Z0-9_-]/g, '_')  // Keep underscores and hyphens
+    .replace(/_{2,}/g, '_');
+
+  // Sanitize the extension part (only allow alphanumeric)
+  const sanitizedExt = extPart
+    .replace(/[^a-zA-Z0-9]/g, '');
+
+  return sanitizedExt 
+    ? `${sanitizedName}.${sanitizedExt}`
+    : sanitizedName;
 }
 
 /**
@@ -62,7 +78,14 @@ async function ensureBucketExists(): Promise<void> {
         .createBucket(STORAGE_CONFIG.BUCKET_NAME, {
           public: true,
           fileSizeLimit: STORAGE_CONFIG.MAX_FILE_SIZE,
-          allowedMimeTypes: ['text/markdown', 'application/pdf', 'text/plain']
+          allowedMimeTypes: [
+            'text/markdown',
+            'text/plain',
+            'application/pdf',
+            'text/x-markdown',
+            'application/json',
+            'text/json'
+          ]
         });
       
       if (createError) {
@@ -106,10 +129,11 @@ export async function uploadDocument(
     // Validate file type
     const isMarkdown = file.type === 'text/markdown' || file.name.toLowerCase().endsWith('.md');
     const isPdf = file.type === 'application/pdf';
+    const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
     
-    if (!isMarkdown && !isPdf) {
+    if (!isMarkdown && !isPdf && !isJson) {
       throw new DocumentError(
-        'Invalid file type. Only Markdown (.md) and PDF files are accepted.',
+        'Invalid file type. Only Markdown (.md), PDF, and JSON files are accepted.',
         'INVALID_FILE_TYPE',
         400
       );
@@ -138,13 +162,16 @@ export async function uploadDocument(
     const sanitizedName = sanitizeFileName(file.name);
     const path = `${options.dominationField || DOCUMENT_DEFAULTS.DOMINATION_FIELD}/${timestamp}_${sanitizedName}`;
     
-    // Create a new Blob with the correct MIME type
+    // Create a new File instance with corrected MIME type
     const contentType = getMimeType(file, isMarkdown);
-    const fileBlob = new Blob([await file.arrayBuffer()], { type: contentType });
-    
+    const correctedFile = new File([file], file.name, { 
+      type: contentType,
+      lastModified: file.lastModified
+    });
+
     const { error: uploadError, data } = await supabase.storage
       .from(STORAGE_CONFIG.BUCKET_NAME)
-      .upload(path, fileBlob, {
+      .upload(path, correctedFile, {  // Use corrected File instead of Blob
         upsert: false,
         contentType: contentType
       });
@@ -169,7 +196,7 @@ export async function uploadDocument(
 
     // Process the document
     const processOptions: ProcessDocumentOptions = {
-      contentType: isPdf ? 'pdf' : 'markdown',
+      contentType: isPdf ? 'pdf' : isJson ? 'json' : 'markdown',
       metadata: {
         type: contentType,
         size: file.size,

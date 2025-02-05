@@ -4,7 +4,7 @@ import { getTextChunks, getEmbeddings } from '../utils/textProcessing';
 import type { Database } from '@/supabase/types/database.types';
 
 export interface ProcessDocumentOptions {
-  contentType: 'pdf' | 'markdown';
+  contentType: 'pdf' | 'markdown' | 'json';
   metadata: DocumentMetadata;
 }
 
