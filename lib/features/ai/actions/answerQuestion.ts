@@ -23,7 +23,7 @@ import { createCompletion } from '../services/completionService';
 import { getContextualPrompt, getSystemMessage, formatConversationByDomain } from '@/lib/features/ai/prompts/systemMessages';
 import { ChatMessage } from '@/lib/types';
 import { DOMINATION_FIELDS, DominationField } from '../config/constants';
-import { FormattedMessage, MessageContent } from '@/lib/types/chat';
+import { MessageContent } from '@/lib/types/chat';
 
 interface AnswerQuestionResponse {
   content: string;
@@ -112,8 +112,76 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
         ? content.map(c => c.type === 'text' ? c.text : '').join(' ')
         : content;
 
-    // Format previous conversation based on domination field
-    const previousConvo = messages
+    // Calculate word importance based on frequency
+    const calculateWordImportance = (text: string): Map<string, number> => {
+      const words = text.toLowerCase().split(/\s+/);
+      const wordFreq = new Map<string, number>();
+      words.forEach(word => {
+        if (word.length > 3) {  // Skip short words
+          wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+        }
+      });
+      return wordFreq;
+    };
+
+    // Calculate relevance score between two texts
+    const calculateRelevance = (currentText: string, historicalText: string): number => {
+      const currentWords = calculateWordImportance(currentText);
+      const historicalWords = calculateWordImportance(historicalText);
+      
+      let score = 0;
+      let matches = 0;
+      
+      // Score based on matching words and their frequencies
+      currentWords.forEach((freq, word) => {
+        if (historicalWords.has(word)) {
+          matches++;
+          // Higher score for less frequent words (potentially more meaningful)
+          score += 1 / freq;
+        }
+      });
+      
+      // Normalize score by text lengths to avoid bias towards longer texts
+      const lengthFactor = Math.sqrt(currentText.split(/\s+/).length * historicalText.split(/\s+/).length);
+      return matches > 0 ? (score * matches) / lengthFactor : 0;
+    };
+
+    // Smart context selection from conversation history
+    const getRelevantMessages = (messages: ChatMessage[], currentContent: string | MessageContent[]) => {
+      if (messages.length <= 2) return messages;
+
+      // Always include the last message (current question)
+      const relevantMessages = [messages[messages.length - 1]];
+      
+      // Include the last exchange for immediate context
+      if (messages.length >= 2) {
+        relevantMessages.unshift(messages[messages.length - 2]);
+      }
+
+      // Look for semantically related earlier messages
+      const currentContentText = getTextContent(currentContent);
+      const earlierMessages = messages.slice(0, -2);
+      
+      // Calculate relevance scores for all earlier messages
+      const scoredMessages = earlierMessages.map(msg => ({
+        message: msg,
+        score: calculateRelevance(
+          currentContentText,
+          getTextContent(msg.userContent || '')
+        )
+      })).filter(item => item.score > 0)  // Only keep messages with some relevance
+        .sort((a, b) => b.score - a.score);  // Sort by relevance score
+      
+      // Add top scoring messages
+      scoredMessages.slice(0, 2).forEach(item => {
+        relevantMessages.unshift(item.message);
+      });
+
+      return relevantMessages;
+    };
+
+    // Format previous conversation based on domination field with smart context
+    const previousConvo = getRelevantMessages(messages, latestUserContent)
       .map(msg => {
         const userContent = getTextContent(msg.userContent || '');
         const assistantContent = msg.assistantContent || '';
@@ -152,7 +220,7 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     // Get the base system message - only use custom prompt here
     const systemMessage = getSystemMessage(dominationField || DOMINATION_FIELDS.NORMAL_CHAT, customPrompt);
 
-    // Create the contextual prompt - don't pass custom prompt since it's in system message
+    // Create the contextual prompt with only current question and search results
     const prompt = getContextualPrompt(
       dominationField || DOMINATION_FIELDS.NORMAL_CHAT,
       previousConvo,
@@ -164,8 +232,8 @@ export async function answerQuestion(options: AnswerQuestionOptions): Promise<An
     let fullResponse = '';
     try {
       const { messages: processedMessages, hasVisionContent } = await processMessages(
-        messages,
-        getTextContent(latestUserContent),
+        [messages[messages.length - 1]], // Only use current message
+        prompt,
         systemMessage,
         imageFile,
         imageDetail
